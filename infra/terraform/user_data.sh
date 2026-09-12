@@ -4,21 +4,22 @@ set -euxo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
-# ─────────────────────────────────────────────
-# 1. System packages
-# ─────────────────────────────────────────────
-
 apt-get update
 apt-get upgrade -y
 
-apt-get install -y \
-  ca-certificates \
-  curl \
-  gnupg
+apt-get install -y ca-certificates curl gnupg snapd
 
-# ─────────────────────────────────────────────
-# 2. Install Docker
-# ─────────────────────────────────────────────
+systemctl enable snapd
+systemctl start snapd
+
+snap wait system seed.loaded
+
+if ! snap list amazon-ssm-agent >/dev/null 2>&1; then
+  snap install amazon-ssm-agent --classic
+fi
+
+systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent
+systemctl restart snap.amazon-ssm-agent.amazon-ssm-agent
 
 install -m 0755 -d /etc/apt/keyrings
 
@@ -27,57 +28,19 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
 
 chmod a+r /etc/apt/keyrings/docker.asc
 
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-  https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
   > /etc/apt/sources.list.d/docker.list
 
 apt-get update
 
-apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 systemctl enable docker
 systemctl start docker
 
-# Allow ubuntu user to use Docker without sudo
 usermod -aG docker ubuntu
 
-# Application directory
 mkdir -p /opt/recarbon
 chown ubuntu:ubuntu /opt/recarbon
 
-# ─────────────────────────────────────────────
-# 3. Pull latest ReCarbon image
-# ─────────────────────────────────────────────
-
-DOCKER_IMAGE="prathamalwayscomeslast/recarbon-backend:latest"
-
-docker pull "$DOCKER_IMAGE"
-
-# ─────────────────────────────────────────────
-# 4. Start backend
-# ─────────────────────────────────────────────
-
-docker run -d \
-  --name recarbon-backend \
-  --restart unless-stopped \
-  -p 3000:3000 \
-  "$DOCKER_IMAGE"
-
-# ─────────────────────────────────────────────
-# 5. Cleanup
-# ─────────────────────────────────────────────
-
-docker image prune -af
-
-echo "ReCarbon backend deployed successfully."
-docker ps
-
-systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent
-systemctl start snap.amazon-ssm-agent.amazon-ssm-agent
+echo "Docker and SSM setup complete."
