@@ -122,3 +122,30 @@ jobs:
         if: always()
         working-directory: infra/terraform
         run: rm -f terraform.tfvars
+
+      - name: Get EC2 Public IP
+        if: inputs.action == 'apply'
+        id: ec2_ip
+        working-directory: infra/terraform
+        run: echo "public_ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Vercel CLI
+        if: inputs.action == 'apply'
+        run: npm install --global vercel@latest
+
+      - name: Update Vercel API URL
+        if: inputs.action == 'apply'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          EC2_IP: ${{ steps.ec2_ip.outputs.public_ip }}
+        run: printf '%s\n' "http://${EC2_IP}:3000" | vercel env add NEXT_PUBLIC_API_URL production --token "$VERCEL_TOKEN" --yes --force
+
+      - name: Redeploy Vercel Frontend
+        if: inputs.action == 'apply'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel deploy --prod --token "$VERCEL_TOKEN" --yes
