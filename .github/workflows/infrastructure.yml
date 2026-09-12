@@ -1,0 +1,140 @@
+name: Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        required: true
+        type: choice
+        options:
+          - apply
+          - destroy
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+
+jobs:
+  terraform:
+    name: Terraform ${{ inputs.action }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # ─────────────────────────────────────
+      # Checkout
+      # ─────────────────────────────────────
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ─────────────────────────────────────
+      # AWS credentials
+      # ─────────────────────────────────────
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ─────────────────────────────────────
+      # Terraform
+      # ─────────────────────────────────────
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      # ─────────────────────────────────────
+      # Generate terraform.tfvars
+      # ─────────────────────────────────────
+
+      - name: Create terraform.tfvars
+        working-directory: infra/terraform
+        env:
+          TF_SSH_PUBLIC_KEY: ${{ secrets.TF_SSH_PUBLIC_KEY }}
+          TF_ALLOWED_SSH_CIDR: ${{ secrets.TF_ALLOWED_SSH_CIDR }}
+          TF_AWS_REGION: ${{ vars.AWS_REGION }}
+          TF_INSTANCE_TYPE: ${{ vars.TF_INSTANCE_TYPE }}
+          TF_INSTANCE_NAME: ${{ vars.TF_INSTANCE_NAME }}
+          TF_SSH_KEY_NAME: ${{ vars.TF_SSH_KEY_NAME }}
+          TF_APP_PORT: ${{ vars.TF_APP_PORT }}
+        run: |
+          cat > terraform.tfvars <<EOF
+          aws_region = "${TF_AWS_REGION}"
+          environment = "production"
+          
+          instance_type = "${TF_INSTANCE_TYPE}"
+          instance_name = "${TF_INSTANCE_NAME}"
+          
+          ssh_key_name = "${TF_SSH_KEY_NAME}"
+          ssh_public_key = "${TF_SSH_PUBLIC_KEY}"
+          
+          allowed_ssh_cidr = "${TF_ALLOWED_SSH_CIDR}"
+          
+          app_port = ${TF_APP_PORT}
+          EOF
+
+      # ─────────────────────────────────────
+      # Terraform init
+      # ─────────────────────────────────────
+
+      - name: Terraform Init
+        working-directory: infra/terraform
+        run: terraform init -input=false
+
+      # ─────────────────────────────────────
+      # Terraform format check
+      # ─────────────────────────────────────
+
+      - name: Terraform Format Check
+        working-directory: infra/terraform
+        run: terraform fmt -check
+
+      # ─────────────────────────────────────
+      # Terraform validation
+      # ─────────────────────────────────────
+
+      - name: Terraform Validate
+        working-directory: infra/terraform
+        run: terraform validate
+
+      # ─────────────────────────────────────
+      # Terraform Plan
+      # ─────────────────────────────────────
+
+      - name: Terraform Plan
+        if: inputs.action == 'apply'
+        working-directory: infra/terraform
+        run: terraform plan -input=false
+
+      # ─────────────────────────────────────
+      # Terraform Apply
+      # ─────────────────────────────────────
+
+      - name: Terraform Apply
+        if: inputs.action == 'apply'
+        working-directory: infra/terraform
+        run: terraform apply -auto-approve -input=false
+
+      # ─────────────────────────────────────
+      # Terraform Destroy
+      # ─────────────────────────────────────
+
+      - name: Terraform Destroy
+        if: inputs.action == 'destroy'
+        working-directory: infra/terraform
+        run: terraform destroy -auto-approve -input=false
+
+      # ─────────────────────────────────────
+      # Cleanup
+      # ─────────────────────────────────────
+
+      - name: Remove generated tfvars
+        if: always()
+        working-directory: infra/terraform
+        run: rm -f terraform.tfvars
