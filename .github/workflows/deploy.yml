@@ -130,7 +130,7 @@ jobs:
             --region ap-south-1 \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[\"mkdir -p /opt/recarbon\",\"echo '$ENV_B64' | base64 -d > /opt/recarbon/.env\",\"chmod 600 /opt/recarbon/.env\",\"chown root:root /opt/recarbon/.env\",\"docker pull $IMAGE\",\"docker stop recarbon-backend || true\",\"docker rm recarbon-backend || true\",\"docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env --add-host=host.docker.internal:host-gateway -p 3000:3000 $IMAGE\",\"sleep 5\",\"docker ps --filter name=recarbon-backend --filter status=running\",\"docker image prune -af\"]" \
+            --parameters "commands=[\"mkdir -p /opt/recarbon\",\"echo '$ENV_B64' | base64 -d > /opt/recarbon/.env\",\"chmod 600 /opt/recarbon/.env\",\"chown root:root /opt/recarbon/.env\",\"docker pull $IMAGE\",\"docker stop recarbon-backend || true\",\"docker rm recarbon-backend || true\",\"docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env --add-host=host.docker.internal:host-gateway -p 127.0.0.1:3000:3000 $IMAGE\",\"sleep 5\",\"docker ps --filter name=recarbon-backend --filter status=running\",\"docker image prune -af\"]" \
             --query "Command.CommandId" \
             --output text)
           

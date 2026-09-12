@@ -56,6 +56,17 @@ apt-get install -y \
   docker-buildx-plugin \
   docker-compose-plugin
 
+apt-get install -y nginx
+snap install --classic certbot
+ln -s /snap/bin/certbot /usr/local/bin/certbot
+
+rm -f /etc/nginx/sites-enabled/default
+printf '%s\n' 'server {' '    listen 80;' '    server_name recarbon-api.duckdns.org;' '' '    location / {' '        proxy_pass http://127.0.0.1:3000;' '        proxy_http_version 1.1;' '        proxy_set_header Host $host;' '        proxy_set_header X-Real-IP $remote_addr;' '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' '        proxy_set_header X-Forwarded-Proto $scheme;' '    }' '}' > /etc/nginx/sites-available/recarbon
+ln -s /etc/nginx/sites-available/recarbon /etc/nginx/sites-enabled/recarbon
+nginx -t
+systemctl enable nginx
+systemctl restart nginx
+
 systemctl enable docker
 systemctl start docker
 

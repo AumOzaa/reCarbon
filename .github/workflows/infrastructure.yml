@@ -128,121 +128,53 @@ jobs:
         working-directory: infra/terraform
         run: echo "public_ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
 
-      - name: Update Vercel API URL
-        if: inputs.action == 'apply'
+      - name: Update DuckDNS
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          DUCKDNS_DOMAIN: ${{ secrets.DUCKDNS_DOMAIN }}
+          DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
           EC2_IP: ${{ steps.ec2_ip.outputs.public_ip }}
         run: |
           set -e
+          RESPONSE=$(curl -fsS "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=${EC2_IP}&verbose=true")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | grep -q "^OK"
           
-          API_URL="http://${EC2_IP}:3000"
-          
-          echo "Setting NEXT_PUBLIC_API_URL=${API_URL}"
-          
-          ENV_ID=$(curl -sS \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-            | jq -r '.envs[] | select(.key=="NEXT_PUBLIC_API_URL" and (.target | index("production"))) | .id' \
-            | head -n 1)
-          
-          if [ -n "$ENV_ID" ] && [ "$ENV_ID" != "null" ]; then
-            echo "Updating existing environment variable..."
-          
-            curl -sS -X PATCH \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-              -H "Content-Type: application/json" \
-              "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${ENV_ID}?teamId=${VERCEL_ORG_ID}" \
-              -d "{\"value\":\"${API_URL}\",\"target\":[\"production\"]}"
-          else
-            echo "Creating environment variable..."
-          
-            curl -sS -X POST \
-              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-              -H "Content-Type: application/json" \
-              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-              -d "{\"key\":\"NEXT_PUBLIC_API_URL\",\"value\":\"${API_URL}\",\"type\":\"plain\",\"target\":[\"production\"]}"
-          fi
-
-      - name: Redeploy Existing Vercel Git Deployment
+      - name: Wait for DuckDNS
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          EC2_IP: ${{ steps.ec2_ip.outputs.public_ip }}
         run: |
           set -e
-          
-          echo "Finding latest production deployment..."
-          
-          DEPLOYMENT=$(curl -sS \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=10" \
-            | jq -c '
-              .deployments
-              | map(select(.state == "READY" and .target == "production"))
-              | .[0]
-            ')
-          
-          echo "$DEPLOYMENT" | jq .
-          
-          DEPLOYMENT_ID=$(echo "$DEPLOYMENT" | jq -r '.uid // empty')
-          GIT_SHA=$(echo "$DEPLOYMENT" | jq -r '.meta.githubCommitSha // empty')
-          GIT_REPO=$(echo "$DEPLOYMENT" | jq -r '.meta.githubRepo // empty')
-          
-          if [ -z "$DEPLOYMENT_ID" ]; then
-            echo "Could not find a production deployment."
-            exit 1
-          fi
-          
-          if [ -z "$GIT_SHA" ]; then
-            echo "Could not find Git commit SHA for the production deployment."
-            exit 1
-          fi
-          
-          if [ -z "$GIT_REPO" ]; then
-            echo "Could not find GitHub repository for the production deployment."
-            exit 1
-          fi
-          
-          REPO_ID=$(curl -sS \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}?teamId=${VERCEL_ORG_ID}" \
-            | jq -r '.link.repoId // empty')
-          
-          if [ -z "$REPO_ID" ]; then
-            echo "Could not determine the GitHub repository ID from the Vercel project."
-            exit 1
-          fi
-          
-          echo "Production deployment: ${DEPLOYMENT_ID}"
-          echo "Git SHA: ${GIT_SHA}"
-          echo "GitHub repo: ${GIT_REPO}"
-          echo "GitHub repo ID: ${REPO_ID}"
-          
-          RESPONSE=$(curl -sS -X POST \
-            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://api.vercel.com/v13/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&forceNew=1" \
-            -d "{
-              \"name\": \"hackout26-frontend\",
-              \"gitSource\": {
-                \"type\": \"github\",
-                \"repoId\": \"${REPO_ID}\",
-                \"ref\": \"master\",
-                \"sha\": \"${GIT_SHA}\"
-              },
-              \"target\": \"production\"
-            }")
-          
-          echo "$RESPONSE" | jq .
-          
-          DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
-          
-          if [ -z "$DEPLOYMENT_URL" ]; then
-            echo "Failed to create Vercel Git deployment."
-            exit 1
-          fi
-          
-          echo "Vercel deployment started: https://${DEPLOYMENT_URL}"
+          for i in {1..30}; do
+            RESOLVED_IP=$(getent ahostsv4 recarbon-api.duckdns.org | awk 'NR==1 {print $1}')
+            echo "DNS: $RESOLVED_IP | EC2: $EC2_IP"
+            if [ "$RESOLVED_IP" = "$EC2_IP" ]; then
+              echo "DNS is ready."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "DNS did not update."
+          exit 1
+
+      - name: Configure HTTPS on EC2
+        env:
+          INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
+        run: |
+          set -e
+
+          COMMAND_ID=$(aws ssm send-command \
+            --region "$AWS_REGION" \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=["nginx -t","systemctl restart nginx","certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email -d recarbon-api.duckdns.org --redirect","systemctl enable certbot.timer","systemctl start certbot.timer"]' \
+            --query "Command.CommandId" \
+            --output text)
+
+          echo "HTTPS setup command: $COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --region "$AWS_REGION" \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+
+          echo "HTTPS configured successfully."
