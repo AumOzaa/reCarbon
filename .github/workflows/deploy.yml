@@ -81,44 +81,39 @@ jobs:
       # ─────────────────────────────────────
       # 5. Wait for EC2 + create .env
       # ─────────────────────────────────────
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Get EC2 instance ID
+        id: ec2
+        run: echo "instance_id=$(aws ec2 describe-instances --region ap-south-1 --filters 'Name=tag:Name,Values=recarbon-backend' 'Name=instance-state-name,Values=running' --query 'Reservations[0].Instances[0].InstanceId' --output text)" >> "$GITHUB_OUTPUT"
 
       - name: Configure EC2
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
           set -e
-          KEY_FILE="$RUNNER_TEMP/recarbon-ec2"
-          printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-          echo "Testing SSH connection..."
-          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USERNAME@$EC2_HOST" "echo 'SSH connection successful'"
-          echo "Creating application directory..."
-          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo mkdir -p /opt/recarbon"
-          echo "Writing production .env..."
-          printf '%s\n' "NODE_ENV=${{ secrets.NODE_ENV }}" "PORT=${{ secrets.PORT }}" "MONGODB_URI=${{ secrets.MONGODB_URI }}" "JWT_SECRET=${{ secrets.JWT_SECRET }}" "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}" "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}" | ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo tee /opt/recarbon/.env > /dev/null"
-          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo chmod 600 /opt/recarbon/.env && sudo chown root:root /opt/recarbon/.env"
-          echo "EC2 configured."
-      
+          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["sudo mkdir -p /opt/recarbon"]' --query 'Command.CommandId' --output text)
+          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
+          printf '%s\n' "NODE_ENV=${{ secrets.NODE_ENV }}" "PORT=${{ secrets.PORT }}" "MONGODB_URI=${{ secrets.MONGODB_URI }}" "JWT_SECRET=${{ secrets.JWT_SECRET }}" "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}" "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}" > /tmp/recarbon.env
+          aws s3 cp /tmp/recarbon.env s3://recarbon-terraform-state-482712210253/recarbon/deploy.env --region ap-south-1
+          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["aws s3 cp s3://recarbon-terraform-state-482712210253/recarbon/deploy.env /opt/recarbon/.env --region ap-south-1","sudo chmod 600 /opt/recarbon/.env","sudo chown root:root /opt/recarbon/.env"]' --query 'Command.CommandId' --output text)
+          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
 
       # ─────────────────────────────────────
-      # 6. Deploy
+      # 6. Deploy via SSM
       # ─────────────────────────────────────
 
       - name: Deploy to EC2
         env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
-          echo "$SSH_KEY" > "$RUNNER_TEMP/key" && chmod 600 "$RUNNER_TEMP/key"
+          set -e
           IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker pull '$IMAGE'"
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker stop recarbon-backend || true"
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker rm recarbon-backend || true"
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env -p 3000:3000 '$IMAGE'"
-          sleep 5
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker ps --filter name=recarbon-backend --filter status=running"
-          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker image prune -af"
+          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters "commands=[\"docker pull $IMAGE\",\"docker stop recarbon-backend || true\",\"docker rm recarbon-backend || true\",\"docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env -p 3000:3000 $IMAGE\",\"sleep 5\",\"docker ps --filter name=recarbon-backend --filter status=running\",\"docker image prune -af\"]" --query "Command.CommandId" --output text)
+          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
           echo "Deployment successful!"

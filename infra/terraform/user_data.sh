@@ -78,3 +78,6 @@ docker image prune -af
 
 echo "ReCarbon backend deployed successfully."
 docker ps
+
+systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent
+systemctl start snap.amazon-ssm-agent.amazon-ssm-agent
