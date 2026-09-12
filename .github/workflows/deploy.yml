@@ -60,6 +60,25 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Debug SSH key
+        shell: bash
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          set -e
+
+          echo "Checking EC2_SSH_KEY..."
+
+          if [ -z "$SSH_KEY" ]; then
+            echo "❌ EC2_SSH_KEY is EMPTY"
+            exit 1
+          fi
+
+          printf '%s\n' "$SSH_KEY" > /tmp/recarbon-ec2
+          chmod 600 /tmp/recarbon-ec2
+
+          echo "Key fingerprint seen by GitHub:"
+          ssh-keygen -y -f /tmp/recarbon-ec2 | ssh-keygen -lf - -E sha256
 
       # ─────────────────────────────────────
       # 5. Wait for EC2 + create .env
