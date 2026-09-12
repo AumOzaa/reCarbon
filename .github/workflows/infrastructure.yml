@@ -166,8 +166,7 @@ jobs:
               -d "{\"key\":\"NEXT_PUBLIC_API_URL\",\"value\":\"${API_URL}\",\"type\":\"plain\",\"target\":[\"production\"]}"
           fi
 
-      - name: Redeploy Existing Vercel Project
-        if: inputs.action == 'apply'
+      - name: Redeploy Existing Vercel Production Deployment
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -175,19 +174,20 @@ jobs:
         run: |
           set -e
           
-          RESPONSE=$(curl -sS -X POST \
+          echo "Finding current production deployment..."
+          
+          DEPLOYMENT_URL=$(curl -sS \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            -H "Content-Type: application/json" \
-            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&forceNew=1" \
-            -d "{\"name\":\"hackout26-frontend\",\"target\":\"production\"}")
-          
-          echo "$RESPONSE"
-          
-          DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=1" \
+            | jq -r '.deployments[0].url // empty')
           
           if [ -z "$DEPLOYMENT_URL" ]; then
-            echo "Failed to create Vercel deployment."
+            echo "Could not find a production deployment."
             exit 1
           fi
           
-          echo "Vercel deployment started: https://${DEPLOYMENT_URL}"
+          echo "Redeploying: https://${DEPLOYMENT_URL}"
+          
+          npx vercel@latest redeploy "https://${DEPLOYMENT_URL}" \
+            --token "$VERCEL_TOKEN" \
+            --target=production
