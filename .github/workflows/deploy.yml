@@ -150,76 +150,18 @@ jobs:
       # ─────────────────────────────────────
 
       - name: Deploy to EC2
-        shell: bash
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
-          set -e
-
-          KEY_FILE="$RUNNER_TEMP/recarbon-ec2"
-
-          printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
-          chmod 600 "$KEY_FILE"
-
-          echo "Connecting to $EC2_USERNAME@$EC2_HOST"
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "echo SSH_OK"
-
+          echo "$SSH_KEY" > "$RUNNER_TEMP/key" && chmod 600 "$RUNNER_TEMP/key"
           IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-
-          echo "Pulling image: $IMAGE"
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker pull '$IMAGE'"
-
-          echo "Stopping old container..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker stop recarbon-backend || true"
-
-          echo "Removing old container..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker rm recarbon-backend || true"
-
-          echo "Starting new container..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker run -d \
-              --name recarbon-backend \
-              --restart unless-stopped \
-              --env-file /opt/recarbon/.env \
-              -p 3000:3000 \
-              '$IMAGE'"
-
-          echo "Waiting for container..."
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker pull '$IMAGE'"
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker stop recarbon-backend || true"
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker rm recarbon-backend || true"
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env -p 3000:3000 '$IMAGE'"
           sleep 5
-
-          echo "Checking container..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker ps --filter name=recarbon-backend"
-
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker ps --filter name=recarbon-backend --filter status=running"
+          ssh -i "$RUNNER_TEMP/key" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "docker image prune -af"
           echo "Deployment successful!"
