@@ -173,7 +173,7 @@ jobs:
             --region "$AWS_REGION" \
             --instance-ids "$INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
-            --parameters 'commands=["nginx -t","systemctl restart nginx","certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email -d recarbon-api.duckdns.org --redirect","systemctl enable certbot.timer","systemctl start certbot.timer"]' \
+            --parameters 'commands=["nginx -t","systemctl restart nginx","certbot --nginx --non-interactive --agree-tos --register-unsafely-without-email -d recarbon-api.duckdns.org --redirect"]' \
             --query "Command.CommandId" \
             --output text)
           
