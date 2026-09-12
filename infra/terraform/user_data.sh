@@ -1,22 +1,24 @@
 #!/bin/bash
-# shellcheck disable=SC2046
-# shellcheck disable=SC1128
 
-set -e
+set -euxo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
-echo "=== Updating system ==="
+# ─────────────────────────────────────────────
+# 1. System packages
+# ─────────────────────────────────────────────
+
 apt-get update
 apt-get upgrade -y
 
-echo "=== Installing required packages ==="
 apt-get install -y \
   ca-certificates \
   curl \
   gnupg
 
-echo "=== Installing Docker ==="
+# ─────────────────────────────────────────────
+# 2. Install Docker
+# ─────────────────────────────────────────────
 
 install -m 0755 -d /etc/apt/keyrings
 
@@ -26,7 +28,8 @@ curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
 chmod a+r /etc/apt/keyrings/docker.asc
 
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+  https://download.docker.com/linux/ubuntu \
   $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
   > /etc/apt/sources.list.d/docker.list
 
@@ -39,17 +42,39 @@ apt-get install -y \
   docker-buildx-plugin \
   docker-compose-plugin
 
-echo "=== Enabling Docker ==="
-
 systemctl enable docker
 systemctl start docker
 
-echo "=== Adding ubuntu user to docker group ==="
-
+# Allow ubuntu user to use Docker without sudo
 usermod -aG docker ubuntu
 
-echo "=== Docker installation complete ==="
+# Application directory
+mkdir -p /opt/recarbon
+chown ubuntu:ubuntu /opt/recarbon
 
-docker --version
+# ─────────────────────────────────────────────
+# 3. Pull latest ReCarbon image
+# ─────────────────────────────────────────────
 
-echo "=== Setup complete ==="
+DOCKER_IMAGE="prathamalwayscomeslast/recarbon-backend:latest"
+
+docker pull "$DOCKER_IMAGE"
+
+# ─────────────────────────────────────────────
+# 4. Start backend
+# ─────────────────────────────────────────────
+
+docker run -d \
+  --name recarbon-backend \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  "$DOCKER_IMAGE"
+
+# ─────────────────────────────────────────────
+# 5. Cleanup
+# ─────────────────────────────────────────────
+
+docker image prune -af
+
+echo "ReCarbon backend deployed successfully."
+docker ps
