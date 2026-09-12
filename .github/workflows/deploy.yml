@@ -100,7 +100,7 @@ jobs:
           COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["sudo mkdir -p /opt/recarbon"]' --query 'Command.CommandId' --output text)
           aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
           printf '%s\n' "NODE_ENV=${{ secrets.NODE_ENV }}" "PORT=${{ secrets.PORT }}" "MONGODB_URI=${{ secrets.MONGODB_URI }}" "JWT_SECRET=${{ secrets.JWT_SECRET }}" "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}" "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}" > /tmp/recarbon.env
-          aws s3 cp /tmp/recarbon.env s3://recarbon-terraform-state-482712210253/recarbon/deploy.env --region ap-south-1
+          aws s3 cp /tmp/recarbon.env s3://recarbon-tfstate/recarbon/deploy.env --region ap-south-1
           COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["aws s3 cp s3://recarbon-terraform-state-482712210253/recarbon/deploy.env /opt/recarbon/.env --region ap-south-1","sudo chmod 600 /opt/recarbon/.env","sudo chown root:root /opt/recarbon/.env"]' --query 'Command.CommandId' --output text)
           aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
 
