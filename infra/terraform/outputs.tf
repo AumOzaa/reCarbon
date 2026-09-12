@@ -23,7 +23,3 @@ output "api_url" {
   value       = "http://${aws_instance.backend.public_ip}:${var.app_port}"
 }
 
-output "elastic_ip" {
-  description = "Stable Elastic IP address for the ReCarbon backend."
-  value       = aws_eip.backend.public_ip
-}

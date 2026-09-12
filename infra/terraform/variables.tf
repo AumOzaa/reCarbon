@@ -34,11 +34,6 @@ variable "ssh_public_key" {
   sensitive   = true
 }
 
-variable "allowed_ssh_cidr" {
-  description = "CIDR allowed to SSH into the EC2 instance. Use your IP/32 for better security."
-  type        = string
-}
-
 variable "app_port" {
   description = "Port exposed by the Express backend."
   type        = number
