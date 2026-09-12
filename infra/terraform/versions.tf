@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket       = "recarbon-terraform-state-482712210253"
+    bucket       = "recarbon-tfstate"
     key          = "recarbon/terraform.tfstate"
     region       = "ap-south-1"
     encrypt      = true
