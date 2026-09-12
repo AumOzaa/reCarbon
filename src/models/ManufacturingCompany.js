@@ -17,6 +17,11 @@ const ManufacturingCompanySchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    pincode: {
+      type: String,
+      trim: true,
+      // pincode is required for new records but existing records may not have it
+    },
     contactNum: {
       type: String,
       required: true,

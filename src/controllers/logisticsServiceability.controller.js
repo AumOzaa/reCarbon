@@ -1,16 +1,7 @@
 const logger = require('../config/logger');
+const { validatePincode } = require('../utils/validation');
 const LogisticsCompany = require('../models/LogisticsCompany');
 const ServiceablePincode = require('../models/ServiceablePincode');
-
-const PINCODE_REGEX = /^\d{6}$/;
-
-/**
- * Validate pincode format (exactly 6 digits)
- */
-const validatePincode = (pincode) => {
-  if (typeof pincode !== 'string') return false;
-  return PINCODE_REGEX.test(pincode.trim());
-};
 
 /**
  * Add serviceable pincodes (bulk support)

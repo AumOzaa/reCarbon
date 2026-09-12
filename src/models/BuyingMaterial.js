@@ -17,6 +17,11 @@ const BuyingMaterialSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    reqPincode: {
+      type: String,
+      trim: true,
+      // reqPincode is required for new records but existing records may not have it
+    },
     data: {
       type: mongoose.Schema.Types.Mixed,
       default: {},

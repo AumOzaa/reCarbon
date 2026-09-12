@@ -1,5 +1,6 @@
 const bcrypt = require('bcrypt');
 const logger = require('../config/logger');
+const { validatePincode } = require('../utils/validation');
 const ManufacturingCompany = require('../models/ManufacturingCompany');
 const CompanyAccount = require('../models/CompanyAccount');
 const SellingMaterial = require('../models/SellingMaterial');
@@ -11,15 +12,25 @@ const BuyingMaterial = require('../models/BuyingMaterial');
  */
 const registerManufacturingCompany = async (req, res) => {
   try {
-    const { name, location, address, contactNum, email, password } = req.body;
+    const { name, location, address, pincode, contactNum, email, password } = req.body;
 
     // Validate required fields
-    if (!name || !location || !address || !contactNum || !email || !password) {
+    if (!name || !location || !address || !pincode || !contactNum || !email || !password) {
       logger.warn('Registration attempt with missing fields', {
         providedFields: Object.keys(req.body),
       });
       return res.status(400).json({
-        message: 'All fields are required: name, location, address, contactNum, email, password',
+        message: 'All fields are required: name, location, address, pincode, contactNum, email, password',
+      });
+    }
+
+    // Validate pincode format
+    if (!validatePincode(pincode)) {
+      logger.warn('Registration attempt - invalid pincode format', {
+        pincode,
+      });
+      return res.status(400).json({
+        message: 'pincode must be exactly 6 digits',
       });
     }
 
@@ -42,6 +53,7 @@ const registerManufacturingCompany = async (req, res) => {
       name: name.trim(),
       location: location.trim(),
       address: address.trim(),
+      pincode: pincode.trim(),
       contactNum,
     });
 
@@ -159,6 +171,7 @@ const getCompanyProfile = async (req, res) => {
       name: company.name,
       location: company.location,
       address: company.address,
+      pincode: company.pincode || null,
       contactNum: company.contactNum,
       email: companyEmail,
       createdAt: company.createdAt,

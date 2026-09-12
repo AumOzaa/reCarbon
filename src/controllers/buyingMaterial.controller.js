@@ -1,4 +1,5 @@
 const logger = require('../config/logger');
+const { validatePincode } = require('../utils/validation');
 const Chemical = require('../models/Chemical');
 const BuyingMaterial = require('../models/BuyingMaterial');
 
@@ -8,22 +9,34 @@ const BuyingMaterial = require('../models/BuyingMaterial');
  */
 const createBuyingMaterial = async (req, res) => {
   try {
-    const { chemical, reqLocation, data } = req.body;
+    const { chemical, reqLocation, reqPincode, data } = req.body;
     const manufacturingCompanyId = req.user.manufacturingCompanyId;
 
     logger.info('Buying material creation attempt', {
       manufacturingCompanyId,
       casNumber: chemical?.casNumber,
+      reqPincode,
     });
 
     // Validate required top-level fields
-    if (!chemical || !reqLocation) {
+    if (!chemical || !reqLocation || !reqPincode) {
       logger.warn('Buying material creation - missing required fields', {
         providedFields: Object.keys(req.body),
         manufacturingCompanyId,
       });
       return res.status(400).json({
-        message: 'All fields are required: chemical, reqLocation',
+        message: 'All fields are required: chemical, reqLocation, reqPincode',
+      });
+    }
+
+    // Validate pincode format
+    if (!validatePincode(reqPincode)) {
+      logger.warn('Buying material creation - invalid pincode format', {
+        reqPincode,
+        manufacturingCompanyId,
+      });
+      return res.status(400).json({
+        message: 'reqPincode must be exactly 6 digits',
       });
     }
 
@@ -152,6 +165,7 @@ const createBuyingMaterial = async (req, res) => {
       manufacturingCompanyId,
       chemicalId: resolvedChemical._id,
       reqLocation: reqLocation.trim(),
+      reqPincode: reqPincode.trim(),
       data: data || {},
     });
 
@@ -172,6 +186,7 @@ const createBuyingMaterial = async (req, res) => {
         manufacturingCompanyId: buyingMaterial.manufacturingCompanyId,
         chemicalId: buyingMaterial.chemicalId,
         reqLocation: buyingMaterial.reqLocation,
+        reqPincode: buyingMaterial.reqPincode || null,
         data: buyingMaterial.data,
         createdAt: buyingMaterial.createdAt,
         updatedAt: buyingMaterial.updatedAt,

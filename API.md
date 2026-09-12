@@ -84,6 +84,7 @@ Content-Type: application/json
   "name": "ABC Chemicals Inc.",
   "location": "Ahmedabad, Gujarat",
   "address": "123 Industrial Area, Phase 1",
+  "pincode": "380001",
   "contactNum": "9876543210",
   "email": "company@example.com",
   "password": "securePassword123"
@@ -97,6 +98,7 @@ Content-Type: application/json
 | `name` | String | Company name | Required, will be trimmed |
 | `location` | String | City/Region where company is located | Required, will be trimmed |
 | `address` | String | Physical address of company | Required, will be trimmed |
+| `pincode` | String | Company facility pincode (Indian) | Required, must be exactly 6 digits, will be trimmed |
 | `contactNum` | String | Contact phone number | Required, stored as string |
 | `email` | String | Company email for login | Required, will be normalized (trimmed + lowercased), must be unique |
 | `password` | String | Login password (plaintext) | Required, will be hashed with bcrypt before storage |
@@ -110,6 +112,7 @@ curl -X POST http://localhost:5000/api/manufacturing-companies/register \
     "name": "ABC Chemicals Inc.",
     "location": "Ahmedabad, Gujarat",
     "address": "123 Industrial Area, Phase 1",
+    "pincode": "380001",
     "contactNum": "9876543210",
     "email": "company@example.com",
     "password": "securePassword123"
@@ -257,6 +260,7 @@ curl -X GET http://localhost:5000/api/manufacturing-companies/me \
   "name": "ABC Chemicals Inc.",
   "location": "Ahmedabad, Gujarat",
   "address": "123 Industrial Area, Phase 1",
+  "pincode": "380001",
   "contactNum": "9876543210",
   "email": "company@example.com",
   "createdAt": "2024-09-12T08:00:00.000Z",
@@ -1234,6 +1238,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
     "casNumber": "7647-01-0"
   },
   "reqLocation": "Ahmedabad, Gujarat",
+  "reqPincode": "380001",
   "data": {
     "purity": 99,
     "quantity": 10,
@@ -1251,6 +1256,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | `chemical.formula` | String | Chemical formula | Required only if CAS number is new |
 | `chemical.casNumber` | String | CAS Registry Number | Required, unique identifier for the chemical |
 | `reqLocation` | String | Where the company needs the chemical delivered | Required, will be trimmed |
+| `reqPincode` | String | Delivery pincode (Indian) | Required, must be exactly 6 digits, will be trimmed |
 | `data` | Object | Flexible key-value attributes | Optional, can contain any chemical-specific properties |
 
 #### CAS Number Resolution
@@ -1300,6 +1306,7 @@ curl -X POST http://localhost:5000/api/buying-materials \
       "casNumber": "7647-01-0"
     },
     "reqLocation": "Ahmedabad, Gujarat",
+    "reqPincode": "380001",
     "data": {
       "purity": 99,
       "quantity": 10,
@@ -1320,6 +1327,7 @@ curl -X POST http://localhost:5000/api/buying-materials \
     "manufacturingCompanyId": "507f1f77bcf86cd799439011",
     "chemicalId": "507f1f77bcf86cd799439014",
     "reqLocation": "Ahmedabad, Gujarat",
+    "reqPincode": "380001",
     "data": {
       "purity": 99,
       "quantity": 10,
@@ -1381,12 +1389,25 @@ curl -X POST http://localhost:5000/api/buying-materials \
 
 ```json
 {
-  "message": "All fields are required: chemical, reqLocation"
+  "message": "All fields are required: chemical, reqLocation, reqPincode"
 }
 ```
 
 **Triggers when:**
-- `chemical` or `reqLocation` is missing
+- `chemical`, `reqLocation`, or `reqPincode` is missing
+
+#### Invalid Pincode Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "reqPincode must be exactly 6 digits"
+}
+```
+
+**Triggers when:**
+- `reqPincode` is not exactly 6 digits
 
 #### Missing CAS Number
 
@@ -2378,7 +2399,17 @@ Content-Type: application/json
 
 ```json
 {
-  "message": "All fields are required: name, location, address, contactNum, email, password"
+  "message": "All fields are required: name, location, address, pincode, contactNum, email, password"
+}
+```
+
+#### Invalid Pincode
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "pincode must be exactly 6 digits"
 }
 ```
 
