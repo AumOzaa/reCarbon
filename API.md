@@ -9,14 +9,15 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 1. [Health Check](#health-check)
 2. [Manufacturing Company Registration](#manufacturing-company-registration)
 3. [Company Profile](#company-profile)
-4. [Login](#login)
-5. [Create Selling Material](#create-selling-material)
-6. [Delete Selling Material](#delete-selling-material)
-7. [Create Buying Material](#create-buying-material)
-8. [Delete Buying Material](#delete-buying-material)
-9. [Search Selling Materials](#search-selling-materials)
-10. [Error Responses](#error-responses)
-11. [Status Codes](#status-codes)
+4. [Check Listings](#check-listings)
+5. [Login](#login)
+6. [Create Selling Material](#create-selling-material)
+7. [Delete Selling Material](#delete-selling-material)
+8. [Create Buying Material](#create-buying-material)
+9. [Delete Buying Material](#delete-buying-material)
+10. [Search Selling Materials](#search-selling-materials)
+11. [Error Responses](#error-responses)
+12. [Status Codes](#status-codes)
 
 ---
 
@@ -372,6 +373,112 @@ curl -X GET http://localhost:5000/api/manufacturing-companies/me \
 4. **Timestamps:** All objects include creation and update timestamps for audit trails.
 
 5. **Flattened Structure:** All company details and listings are in a single flattened response (no nested company/account separation).
+
+---
+
+## Check Listings
+
+Check if the authenticated company has at least one selling or buying material listing.
+
+This endpoint performs a lightweight check to verify if the company has created any listings without returning the full details.
+
+### Endpoint
+
+```http
+GET /api/manufacturing-companies/has-listings
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The JWT token is obtained from the [Login](#login) endpoint and contains:
+- `accountId` — Company account ID
+- `manufacturingCompanyId` — Company ID (used to check this company's listings)
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Request Example
+
+```bash
+curl -X GET http://localhost:5000/api/manufacturing-companies/has-listings \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+When company has at least one listing (selling or buying):
+
+```json
+{
+  "hasListings": true
+}
+```
+
+When company has no listings:
+
+```json
+{
+  "hasListings": false
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `hasListings` | Boolean | `true` if company has at least one SellingMaterial or BuyingMaterial, `false` otherwise |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT token signature is invalid
+
+### Important Notes
+
+1. **Lightweight Check:** This endpoint only counts listings, not returns them, making it fast even with many listings.
+
+2. **Boolean Only:** The response is a simple boolean flag, not a count or list of items.
+
+3. **Checks Both Types:** Returns `true` if the company has ANY selling OR ANY buying material (inclusive OR logic).
+
+4. **No Data Returned:** Unlike the [Company Profile](#company-profile) endpoint, this returns only the presence check, not the actual listing details.
 
 ---
 
@@ -1944,6 +2051,7 @@ All error responses follow this format:
 |------|----------|---------|
 | `200` | Login | Authentication successful, token returned |
 | `200` | Company Profile | Profile retrieved successfully |
+| `200` | Check Listings | Listings check completed (true or false) |
 | `200` | Search Selling Materials | Search completed (results may be empty) |
 | `200` | Delete Selling Material | Selling material deleted successfully |
 | `200` | Delete Buying Material | Buying material deleted successfully |
@@ -1957,7 +2065,7 @@ All error responses follow this format:
 |------|----------|---------|
 | `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material | Required fields missing or invalid (or invalid ID format for delete) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile | Missing or invalid JWT token |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile, Check Listings | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
 | `404` | Delete Selling Material | Selling material not found or belongs to different company |
 | `404` | Delete Buying Material | Buying material not found or belongs to different company |

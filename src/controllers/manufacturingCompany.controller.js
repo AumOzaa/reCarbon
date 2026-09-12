@@ -225,7 +225,58 @@ const getCompanyProfile = async (req, res) => {
   }
 };
 
+/**
+ * Check if authenticated company has at least one listing
+ * GET /api/manufacturing-companies/has-listings
+ *
+ * Returns a boolean indicating if the company has any selling or buying materials
+ */
+const checkHasListings = async (req, res) => {
+  try {
+    const manufacturingCompanyId = req.user.manufacturingCompanyId;
+
+    logger.info('Checking if company has listings', { manufacturingCompanyId });
+
+    // Check if company has at least one selling material
+    const sellingCount = await SellingMaterial.countDocuments({
+      manufacturingCompanyId,
+    });
+
+    if (sellingCount > 0) {
+      logger.info('Company has listings', {
+        manufacturingCompanyId,
+        hasListings: true,
+      });
+      return res.status(200).json({ hasListings: true });
+    }
+
+    // Check if company has at least one buying material
+    const buyingCount = await BuyingMaterial.countDocuments({
+      manufacturingCompanyId,
+    });
+
+    const hasListings = buyingCount > 0;
+
+    logger.info('Company listings check completed', {
+      manufacturingCompanyId,
+      hasListings,
+    });
+
+    return res.status(200).json({ hasListings });
+  } catch (error) {
+    logger.error('Check listings request failed', {
+      error: error.message,
+      manufacturingCompanyId: req.user?.manufacturingCompanyId,
+    });
+
+    return res.status(500).json({
+      message: 'An error occurred while checking listings',
+    });
+  }
+};
+
 module.exports = {
   registerManufacturingCompany,
   getCompanyProfile,
+  checkHasListings,
 };
