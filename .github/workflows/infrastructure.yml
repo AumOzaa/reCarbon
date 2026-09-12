@@ -174,20 +174,34 @@ jobs:
         run: |
           set -e
           
-          echo "Finding current production deployment..."
+          echo "Finding latest production deployment..."
           
-          DEPLOYMENT_URL=$(curl -sS \
+          RESPONSE=$(curl -sS \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
-            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=1" \
-            | jq -r '.deployments[0].url // empty')
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&target=production&limit=10")
           
-          if [ -z "$DEPLOYMENT_URL" ]; then
-            echo "Could not find a production deployment."
+          echo "$RESPONSE" | jq -e '.deployments' >/dev/null
+          
+          DEPLOYMENT_ID=$(echo "$RESPONSE" | jq -r '
+            .deployments
+            | map(select(.readyState == "READY"))
+            | .[0].uid // empty
+          ')
+          
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            echo "Could not find a READY production deployment."
             exit 1
           fi
           
-          echo "Redeploying: https://${DEPLOYMENT_URL}"
+          echo "Rebuilding deployment: ${DEPLOYMENT_ID}"
           
-          npx vercel@latest redeploy "https://${DEPLOYMENT_URL}" \
-            --token "$VERCEL_TOKEN" \
-            --target=production
+          REBUILD_RESPONSE=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.vercel.com/v13/deployments/${DEPLOYMENT_ID}/rebuild?teamId=${VERCEL_ORG_ID}")
+          
+          echo "$REBUILD_RESPONSE"
+          
+          echo "$REBUILD_RESPONSE" | jq -e '.uid // .id // .url' >/dev/null
+          
+          echo "Vercel redeploy triggered successfully."
