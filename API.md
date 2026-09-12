@@ -17,8 +17,15 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 9. [Delete Buying Material](#delete-buying-material)
 10. [Search Selling Materials](#search-selling-materials)
 11. [Personalized Feed](#personalized-feed)
-12. [Error Responses](#error-responses)
-13. [Status Codes](#status-codes)
+12. [Logistics Company Registration](#logistics-company-registration)
+13. [Logistics Company Login](#logistics-company-login)
+14. [Logistics Company Profile](#logistics-company-profile)
+15. [Add Serviceable Pincodes](#add-serviceable-pincodes)
+16. [Get Serviceable Pincodes](#get-serviceable-pincodes)
+17. [Remove Serviceable Pincode](#remove-serviceable-pincode)
+18. [Lookup Logistics Companies](#lookup-logistics-companies)
+19. [Error Responses](#error-responses)
+20. [Status Codes](#status-codes)
 
 ---
 
@@ -2312,6 +2319,662 @@ This is a valid response (HTTP 200), not an error.
 
 ---
 
+## Logistics Company Registration
+
+Register a new logistics company on the marketplace.
+
+### Endpoint
+
+```http
+POST /api/logistics-companies/register
+```
+
+### Request Headers
+
+```http
+Content-Type: application/json
+```
+
+### Request Body
+
+```json
+{
+  "name": "Express Logistics Ltd.",
+  "location": "Ahmedabad, Gujarat",
+  "address": "456 Logistics Park, Phase 2",
+  "contactNum": "9988776655",
+  "email": "admin@expresslogistics.com",
+  "password": "securePassword123"
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `name` | String | Logistics company name | Required, will be trimmed |
+| `location` | String | City/Region where company is located | Required, will be trimmed |
+| `address` | String | Physical address of company | Required, will be trimmed |
+| `contactNum` | String | Contact phone number | Required, stored as string |
+| `email` | String | Company email for login | Required, will be normalized (trimmed + lowercased), must be unique |
+| `password` | String | Login password (plaintext) | Required, will be hashed with bcrypt before storage |
+
+### Success Response
+
+**Status Code:** `201 Created`
+
+```json
+{
+  "message": "Logistics company registered successfully",
+  "logisticsCompanyId": "507f1f77bcf86cd799439031"
+}
+```
+
+### Error Responses
+
+#### Missing Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "All fields are required: name, location, address, contactNum, email, password"
+}
+```
+
+#### Duplicate Email
+
+**Status Code:** `409 Conflict`
+
+```json
+{
+  "message": "An account with this email already exists"
+}
+```
+
+#### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred during registration. Please try again later."
+}
+```
+
+---
+
+## Logistics Company Login
+
+Authenticate a logistics company and receive a JWT token.
+
+### Endpoint
+
+```http
+POST /api/logistics-auth/login
+```
+
+### Request Headers
+
+```http
+Content-Type: application/json
+```
+
+### Request Body
+
+```json
+{
+  "email": "admin@expresslogistics.com",
+  "password": "securePassword123"
+}
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "logisticsCompanyId": "507f1f77bcf86cd799439031"
+}
+```
+
+### Error Responses
+
+#### Missing Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Email and password are required"
+}
+```
+
+#### Invalid Credentials
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid email or password"
+}
+```
+
+#### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred during login. Please try again later."
+}
+```
+
+---
+
+## Logistics Company Profile
+
+Get the authenticated logistics company's profile information.
+
+### Endpoint
+
+```http
+GET /api/logistics-companies/me
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Request Example
+
+```bash
+curl -X GET http://localhost:5000/api/logistics-companies/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439031",
+  "name": "Express Logistics Ltd.",
+  "location": "Ahmedabad, Gujarat",
+  "address": "456 Logistics Park, Phase 2",
+  "contactNum": "9988776655",
+  "email": "admin@expresslogistics.com",
+  "createdAt": "2024-09-13T10:00:00.000Z",
+  "updatedAt": "2024-09-13T10:00:00.000Z"
+}
+```
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+#### Company Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Logistics company not found"
+}
+```
+
+---
+
+## Add Serviceable Pincodes
+
+Add one or multiple serviceable pincodes for the authenticated logistics company. Supports bulk addition with automatic deduplication.
+
+### Endpoint
+
+```http
+POST /api/logistics/serviceability/pincodes
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Headers
+
+```http
+Content-Type: application/json
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Request Body
+
+```json
+{
+  "pincodes": [
+    "380001",
+    "380002",
+    "380003",
+    "380004"
+  ]
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `pincodes` | Array | Array of pincode strings | Required, must be non-empty array |
+| `pincodes[]` | String | Individual pincode | Must be exactly 6 digits, duplicates are handled automatically |
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/logistics/serviceability/pincodes \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "pincodes": [
+      "380001",
+      "380002",
+      "380003"
+    ]
+  }'
+```
+
+### Success Response
+
+**Status Code:** `201 Created`
+
+```json
+{
+  "message": "Serviceable pincodes added successfully",
+  "added": 3,
+  "duplicates": 0,
+  "totalProcessed": 3
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `added` | Number | Number of new pincodes added |
+| `duplicates` | Number | Number of pincodes that already exist |
+| `totalProcessed` | Number | Total pincodes provided in request |
+
+### Error Responses
+
+#### Invalid Pincodes
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pincodes: 38000, abc123. Pincodes must be exactly 6 digits."
+}
+```
+
+#### Empty Array
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "pincodes array cannot be empty"
+}
+```
+
+#### Invalid Request Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "pincodes must be an array"
+}
+```
+
+#### Company Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Logistics company not found"
+}
+```
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+---
+
+## Get Serviceable Pincodes
+
+Retrieve all serviceable pincodes for the authenticated logistics company with pagination support.
+
+### Endpoint
+
+```http
+GET /api/logistics/serviceability/pincodes?page=1&limit=100
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### Query Parameters
+
+| Parameter | Type | Default | Constraints |
+|-----------|------|---------|------------|
+| `page` | Number | 1 | Must be >= 1, integer |
+| `limit` | Number | 100 | Must be 1-500, integer |
+
+### Request Example
+
+```bash
+curl -X GET "http://localhost:5000/api/logistics/serviceability/pincodes?page=1&limit=50" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "page": 1,
+  "limit": 50,
+  "total": 150,
+  "hasMore": true,
+  "pincodes": [
+    {
+      "pincode": "380001",
+      "addedAt": "2024-09-13T10:30:00.000Z"
+    },
+    {
+      "pincode": "380002",
+      "addedAt": "2024-09-13T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `page` | Number | Current page number (1-indexed) |
+| `limit` | Number | Number of results per page |
+| `total` | Number | Total pincodes for this company |
+| `hasMore` | Boolean | `true` if there are more results on next page |
+| `pincodes` | Array | Array of pincode objects for this page |
+| `pincodes[].pincode` | String | The 6-digit pincode |
+| `pincodes[].addedAt` | String | ISO timestamp when pincode was added |
+
+### Error Responses
+
+#### Invalid Pagination
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pagination parameters. page and limit must be positive integers."
+}
+```
+
+#### Limit Too High
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "limit must be <= 500"
+}
+```
+
+#### Company Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Logistics company not found"
+}
+```
+
+---
+
+## Remove Serviceable Pincode
+
+Remove a single serviceable pincode from the authenticated logistics company.
+
+### Endpoint
+
+```http
+DELETE /api/logistics/serviceability/pincodes/:pincode
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+### URL Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pincode` | String | The 6-digit pincode to remove |
+
+### Request Example
+
+```bash
+curl -X DELETE http://localhost:5000/api/logistics/serviceability/pincodes/380001 \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "Pincode removed successfully",
+  "pincode": "380001"
+}
+```
+
+### Error Responses
+
+#### Invalid Pincode Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pincode format. Pincode must be exactly 6 digits."
+}
+```
+
+#### Pincode Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Pincode not found for this company"
+}
+```
+
+#### Company Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Logistics company not found"
+}
+```
+
+---
+
+## Lookup Logistics Companies
+
+Public endpoint to find logistics companies that service a specific pincode. No authentication required.
+
+### Endpoint
+
+```http
+GET /api/logistics/serviceability/lookup?pincode=380001
+```
+
+### Query Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `pincode` | String | Yes | The 6-digit pincode to look up |
+
+### Request Example
+
+```bash
+curl -X GET "http://localhost:5000/api/logistics/serviceability/lookup?pincode=380001"
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "pincode": "380001",
+  "availableLogisticsCompanies": [
+    {
+      "_id": "507f1f77bcf86cd799439031",
+      "name": "Express Logistics Ltd.",
+      "location": "Ahmedabad, Gujarat",
+      "address": "456 Logistics Park, Phase 2",
+      "contactNum": "9988776655"
+    },
+    {
+      "_id": "507f1f77bcf86cd799439032",
+      "name": "Swift Delivery Services",
+      "location": "Ahmedabad, Gujarat",
+      "address": "789 Business Hub, Suite 5",
+      "contactNum": "9876543210"
+    }
+  ]
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `pincode` | String | The requested pincode |
+| `availableLogisticsCompanies` | Array | List of logistics companies servicing this pincode |
+| `availableLogisticsCompanies[].\_id` | String | MongoDB ObjectId of the logistics company |
+| `availableLogisticsCompanies[].name` | String | Company name |
+| `availableLogisticsCompanies[].location` | String | City/Region where company is located |
+| `availableLogisticsCompanies[].address` | String | Physical address |
+| `availableLogisticsCompanies[].contactNum` | String | Contact phone number |
+
+### Empty Results Response
+
+When no logistics companies service the requested pincode:
+
+```json
+{
+  "pincode": "999999",
+  "availableLogisticsCompanies": []
+}
+```
+
+### Error Responses
+
+#### Missing Pincode
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pincode. Pincode must be exactly 6 digits."
+}
+```
+
+#### Invalid Pincode Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pincode. Pincode must be exactly 6 digits."
+}
+```
+
+### Important Notes
+
+1. **Public Endpoint:** No authentication required. Buyers can look up logistics availability without login.
+
+2. **No Private Data Exposed:** Only basic company information is returned. Account credentials and internal details are never exposed.
+
+3. **Efficient Lookup:** Pincode index ensures fast queries even with thousands of pincodes across many companies.
+
+4. **Empty Results OK:** Returns 200 OK even if no companies service the pincode. This is not an error state.
+
+---
+
 ## Error Responses
 
 ### Error Response Format
@@ -2355,22 +3018,33 @@ All error responses follow this format:
 | `200` | Personalized Feed | Feed retrieved successfully (may be empty) |
 | `200` | Delete Selling Material | Selling material deleted successfully |
 | `200` | Delete Buying Material | Buying material deleted successfully |
+| `200` | Logistics Company Login | Authentication successful, token returned |
+| `200` | Logistics Company Profile | Profile retrieved successfully |
+| `200` | Get Serviceable Pincodes | Pincodes retrieved successfully |
+| `200` | Remove Serviceable Pincode | Pincode removed successfully |
+| `200` | Lookup Logistics Companies | Lookup completed (results may be empty) |
 | `201` | Registration | Company registered successfully |
 | `201` | Create Selling Material | Selling material created successfully |
 | `201` | Create Buying Material | Buying material created successfully |
+| `201` | Logistics Company Registration | Logistics company registered successfully |
+| `201` | Add Serviceable Pincodes | Pincodes added successfully |
 
 ### Client Error Status Codes
 
 | Code | Endpoint | Meaning |
 |------|----------|---------|
-| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material, Personalized Feed | Required fields missing or invalid (or invalid pagination for feed) |
+| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material, Personalized Feed, Add/Remove Serviceable Pincodes, Get Serviceable Pincodes | Required fields missing or invalid (or invalid pagination/pincode format) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile, Check Listings, Personalized Feed | Missing or invalid JWT token |
+| `401` | Logistics Company Login | Invalid email or password |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile, Check Listings, Personalized Feed, Add/Remove/Get Serviceable Pincodes | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
 | `404` | Delete Selling Material | Selling material not found or belongs to different company |
 | `404` | Delete Buying Material | Buying material not found or belongs to different company |
 | `404` | Company Profile | Company not found in database |
+| `404` | Logistics Company Profile, Add/Remove/Get Serviceable Pincodes | Logistics company not found in database |
+| `404` | Remove Serviceable Pincode | Pincode not found for this company |
 | `409` | Registration | Email already registered |
+| `409` | Logistics Company Registration | Email already registered |
 | `409` | Create Buying Material | Buying material for this chemical already exists |
 
 ### Server Error Status Codes
@@ -2378,9 +3052,12 @@ All error responses follow this format:
 | Code | Endpoint | Meaning |
 |------|----------|---------|
 | `500` | Registration, Login | Unexpected server error |
+| `500` | Logistics Company Registration, Logistics Company Login | Unexpected server error |
 | `500` | Delete Selling Material | Pinecone or MongoDB deletion failure |
 | `500` | Delete Buying Material | MongoDB deletion failure |
 | `500` | Personalized Feed | Embedding generation, Pinecone search, or MongoDB fetch failure |
+| `500` | Add/Remove/Get Serviceable Pincodes, Lookup Logistics Companies | MongoDB operation or unexpected server error |
+| `500` | Logistics Company Profile | Database or unexpected server error |
 
 ---
 
