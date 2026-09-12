@@ -129,18 +129,6 @@ jobs:
         working-directory: infra/terraform
         run: echo "public_ip=$(terraform output -raw public_ip)" >> "$GITHUB_OUTPUT"
 
-      - name: Install Vercel CLI
-        if: inputs.action == 'apply'
-        run: npm install --global vercel@latest
-
-      - name: Link Vercel Project
-        if: inputs.action == 'apply'
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel link --yes --token "$VERCEL_TOKEN"
-
       - name: Update Vercel API URL
         if: inputs.action == 'apply'
         env:
@@ -148,7 +136,36 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
           EC2_IP: ${{ steps.ec2_ip.outputs.public_ip }}
-        run: printf '%s\n' "http://${EC2_IP}:3000" | vercel env add NEXT_PUBLIC_API_URL production --token "$VERCEL_TOKEN" --yes --force
+        run: |
+          set -e
+          
+          API_URL="http://${EC2_IP}:3000"
+          
+          echo "Updating NEXT_PUBLIC_API_URL to ${API_URL}"
+          
+          ENV_ID=$(curl -sS \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+            | jq -r '.envs[] | select(.key=="NEXT_PUBLIC_API_URL" and .target[]=="production") | .id' \
+            | head -n 1)
+          
+          if [ -n "$ENV_ID" ] && [ "$ENV_ID" != "null" ]; then
+            echo "Existing Vercel environment variable found. Updating it."
+          
+            curl -sS -X PATCH \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${ENV_ID}?teamId=${VERCEL_ORG_ID}" \
+              -d "{\"value\":\"${API_URL}\",\"target\":[\"production\"]}"
+          else
+            echo "NEXT_PUBLIC_API_URL does not exist. Creating it."
+          
+            curl -sS -X POST \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
+              -d "{\"key\":\"NEXT_PUBLIC_API_URL\",\"value\":\"${API_URL}\",\"type\":\"plain\",\"target\":[\"production\"]}"
+          fi
 
       - name: Redeploy Vercel Frontend
         if: inputs.action == 'apply'
@@ -156,4 +173,5 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: vercel deploy --prod --token "$VERCEL_TOKEN" --yes
+        run: |
+          npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
