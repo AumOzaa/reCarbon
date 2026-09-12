@@ -1,0 +1,24 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Terraform variables containing secrets/environment-specific values
+terraform.tfvars
+*.auto.tfvars
+
+# Terraform lock file SHOULD be committed
+# DO NOT ignore .terraform.lock.hcl
+
+# Local/private keys
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+
+# OS
+.DS_Store
+Thumbs.db
