@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth.routes');
 const sellingMaterialRoutes = require('./routes/sellingMaterial.routes');
 const buyingMaterialRoutes = require('./routes/buyingMaterial.routes');
 const sellingMaterialSearchRoutes = require('./routes/sellingMaterialSearch.routes');
+const feedRoutes = require('./routes/feed.routes');
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/selling-materials', sellingMaterialRoutes);
 app.use('/api/buying-materials', buyingMaterialRoutes);
 app.use('/api/search/selling-materials', sellingMaterialSearchRoutes);
+app.use('/api/feed', feedRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

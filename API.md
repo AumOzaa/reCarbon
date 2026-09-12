@@ -16,8 +16,9 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 8. [Create Buying Material](#create-buying-material)
 9. [Delete Buying Material](#delete-buying-material)
 10. [Search Selling Materials](#search-selling-materials)
-11. [Error Responses](#error-responses)
-12. [Status Codes](#status-codes)
+11. [Personalized Feed](#personalized-feed)
+12. [Error Responses](#error-responses)
+13. [Status Codes](#status-codes)
 
 ---
 
@@ -2013,6 +2014,304 @@ When no seller listings match the CAS number:
 
 ---
 
+## Personalized Feed
+
+Get a personalized marketplace feed based on the authenticated company's buying and selling interests.
+
+The feed automatically recommends SellingMaterial listings that are relevant to the company's existing interests without requiring manual preference configuration.
+
+### Endpoint
+
+```http
+GET /api/feed?page=1&limit=20
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The JWT token is obtained from the [Login](#login) endpoint and contains:
+- `accountId` — Company account ID
+- `manufacturingCompanyId` — Used to derive company interests and exclude own listings
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Query Parameters
+
+| Parameter | Type | Default | Constraints |
+|-----------|------|---------|------------|
+| `page` | Number | 1 | Must be >= 1, integer |
+| `limit` | Number | 20 | Must be 1-50, integer |
+
+### Request Example
+
+```bash
+curl -X GET "http://localhost:5000/api/feed?page=1&limit=20" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "page": 1,
+  "limit": 20,
+  "hasMore": true,
+  "results": [
+    {
+      "score": 0.87,
+      "relevanceScore": 0.91,
+      "freshnessScore": 0.71,
+      "sellingMaterial": {
+        "_id": "507f1f77bcf86cd799439016",
+        "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+        "sourceLocation": "Ahmedabad, Gujarat",
+        "cadence": "monthly",
+        "state": "liquid",
+        "data": {
+          "purity": 99,
+          "quantity": 20,
+          "unit": "tonnes"
+        },
+        "embeddingId": "sellingMaterial:507f1f77bcf86cd799439016",
+        "createdAt": "2024-09-12T10:35:00.000Z",
+        "updatedAt": "2024-09-12T10:35:00.000Z",
+        "chemical": {
+          "_id": "507f1f77bcf86cd799439014",
+          "name": "Hydrochloric Acid",
+          "formula": "HCl",
+          "casNumber": "7647-01-0"
+        }
+      },
+      "company": {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "ABC Chemicals Inc.",
+        "location": "Ahmedabad, Gujarat",
+        "address": "123 Industrial Area, Phase 1",
+        "contactNum": "9876543210",
+        "email": "company@example.com",
+        "createdAt": "2024-09-12T08:00:00.000Z",
+        "updatedAt": "2024-09-12T08:00:00.000Z",
+        "accountCreatedAt": "2024-09-12T08:00:00.000Z",
+        "accountUpdatedAt": "2024-09-12T08:00:00.000Z"
+      }
+    }
+  ]
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `page` | Number | Current page number (1-indexed) |
+| `limit` | Number | Number of results per page |
+| `hasMore` | Boolean | `true` if there are more results on next page |
+| `results` | Array | Array of feed items for this page |
+| `results[].score` | Number | Combined relevance and freshness score (0-1) |
+| `results[].relevanceScore` | Number | Similarity score to company interests (0-1) |
+| `results[].freshnessScore` | Number | Freshness decay score based on listing age (0-1) |
+| `results[].sellingMaterial` | Object | Full SellingMaterial listing with chemical details |
+| `results[].company` | Object | Complete seller company information (all fields except password hash) |
+| `results[].company._id` | String | MongoDB ObjectId of the seller company |
+| `results[].company.name` | String | Company name |
+| `results[].company.location` | String | City/Region where company is located |
+| `results[].company.address` | String | Physical address of the seller company |
+| `results[].company.contactNum` | String | Company phone number |
+| `results[].company.email` | String | Company email address |
+| `results[].company.createdAt` | String | ISO timestamp when company was created |
+| `results[].company.updatedAt` | String | ISO timestamp of last company update |
+| `results[].company.accountCreatedAt` | String | ISO timestamp when company account was created |
+| `results[].company.accountUpdatedAt` | String | ISO timestamp of last account update |
+
+### How the Feed Works
+
+#### 1. Interest Derivation
+
+The feed extracts company interests from:
+
+- All **BuyingMaterials** the company is requesting
+- All **SellingMaterials** the company is offering
+
+Example:
+
+```
+Company A interests:
+  Buying: Hydrochloric Acid, Acetone
+  Selling: Methanol
+  Total: 3 interests
+```
+
+#### 2. Interest Representations
+
+Each interest is converted to a text representation containing:
+
+- Chemical name, formula, CAS number
+- Location (required location for buying, source for selling)
+- Physical state, cadence (for selling materials)
+- All flexible data fields
+
+#### 3. Embedding Generation
+
+Each interest representation is embedded using the Ollama `embeddinggemma:300m` model, creating a vector representation of the company's interests.
+
+#### 4. Pinecone Search
+
+Each interest embedding is used to search Pinecone for similar SellingMaterial listings (top 20 per interest).
+
+Results from all interests are combined and deduplicated.
+
+#### 5. Scoring
+
+**Relevance Score:**
+- Highest Pinecone similarity score across all matching interests
+- Range: 0-1
+
+**Freshness Score:**
+- Exponential decay based on listing age
+- `freshnessScore = exp(-ageInDays / 30)`
+- Range: 0-1
+
+**Final Score:**
+- `finalScore = 0.8 × relevanceScore + 0.2 × freshnessScore`
+- Emphasizes relevance while allowing freshness to influence ranking
+- Sorted descending
+
+#### 6. Exclusions
+
+- Company's own SellingMaterial listings are excluded
+- Only shows opportunities from other sellers
+
+### Special Cases
+
+#### New Company (No Interests)
+
+If the authenticated company has no BuyingMaterials or SellingMaterials yet:
+
+```json
+{
+  "page": 1,
+  "limit": 20,
+  "hasMore": true,
+  "results": [
+    {
+      "score": 0.45,
+      "relevanceScore": 0,
+      "freshnessScore": 0.45,
+      "sellingMaterial": { ... }
+    }
+  ]
+}
+```
+
+The feed returns the newest SellingMaterials from the marketplace sorted by creation date, giving new companies immediate value.
+
+#### No Matching Results
+
+If the company has interests but no matching results are found:
+
+```json
+{
+  "page": 1,
+  "limit": 20,
+  "hasMore": false,
+  "results": []
+}
+```
+
+This is a valid response (HTTP 200), not an error.
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT token signature is invalid
+
+#### Invalid Pagination
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid pagination. page must be >= 1, limit must be between 1 and 50"
+}
+```
+
+**Triggers when:**
+- `page` is not a positive integer
+- `limit` is not an integer between 1 and 50
+
+#### Feed Generation Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "Unable to generate feed recommendations."
+}
+```
+
+**Triggers when:**
+- Embedding generation fails (Ollama issue)
+- Pinecone search fails (connectivity issue)
+- MongoDB fetch fails (database issue)
+
+### Important Notes
+
+1. **Dynamic Interests:** The feed derives interests from current BuyingMaterial and SellingMaterial records. No separate interest configuration needed.
+
+2. **Real-time:** The feed is generated on-demand each time it's requested. Interest changes (new buy/sell requests) are reflected immediately.
+
+3. **Performance:** Interest embeddings are generated on-request (not cached). Subsequent requests generate fresh embeddings to capture changes.
+
+4. **No Own Listings:** A company will never see its own SellingMaterials in the feed, even if they match the company's other interests.
+
+5. **Pagination:** Results are paginated after ranking and deduplication. The full candidate pool is scored before pagination to ensure quality results.
+
+6. **Score Interpretation:**
+   - `relevanceScore` = How similar to company interests (0-1)
+   - `freshnessScore` = How recent the listing is (0-1)
+   - `score` (final) = Combined metric for ranking (0-1)
+
+7. **Freshness Decay:** Listings decay in freshness over time. A 30-day-old listing has a freshness score of ~0.37. Adjust via `FEED_FRESHNESS_DECAY_DAYS` environment variable.
+
+---
+
 ## Error Responses
 
 ### Error Response Format
@@ -2053,6 +2352,7 @@ All error responses follow this format:
 | `200` | Company Profile | Profile retrieved successfully |
 | `200` | Check Listings | Listings check completed (true or false) |
 | `200` | Search Selling Materials | Search completed (results may be empty) |
+| `200` | Personalized Feed | Feed retrieved successfully (may be empty) |
 | `200` | Delete Selling Material | Selling material deleted successfully |
 | `200` | Delete Buying Material | Buying material deleted successfully |
 | `201` | Registration | Company registered successfully |
@@ -2063,9 +2363,9 @@ All error responses follow this format:
 
 | Code | Endpoint | Meaning |
 |------|----------|---------|
-| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material | Required fields missing or invalid (or invalid ID format for delete) |
+| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material, Personalized Feed | Required fields missing or invalid (or invalid pagination for feed) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile, Check Listings | Missing or invalid JWT token |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile, Check Listings, Personalized Feed | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
 | `404` | Delete Selling Material | Selling material not found or belongs to different company |
 | `404` | Delete Buying Material | Buying material not found or belongs to different company |
@@ -2080,6 +2380,7 @@ All error responses follow this format:
 | `500` | Registration, Login | Unexpected server error |
 | `500` | Delete Selling Material | Pinecone or MongoDB deletion failure |
 | `500` | Delete Buying Material | MongoDB deletion failure |
+| `500` | Personalized Feed | Embedding generation, Pinecone search, or MongoDB fetch failure |
 
 ---
 

@@ -158,9 +158,9 @@ const deleteSellingMaterialVector = async (sellingMaterialId, embeddingId) => {
 };
 
 /**
- * Search selling materials in Pinecone with CAS filter
+ * Search selling materials in Pinecone with optional CAS filter
  * @param {number[]} embedding - Query embedding vector (768-dimensional)
- * @param {string} casNumber - Chemical CAS number (hard filter)
+ * @param {string|null} casNumber - Chemical CAS number (hard filter, optional)
  * @param {number} topK - Number of top results to return
  * @returns {Promise<Array>} - Array of Pinecone matches with scores
  * @throws {Error} - If search fails
@@ -177,23 +177,30 @@ const searchSellingMaterials = async (embedding, casNumber, topK = 10) => {
 
     logger.debug('Pinecone search started', {
       embeddingDimension: embedding.length,
-      casNumber,
+      casNumber: casNumber || 'no filter',
       topK,
     });
 
     const index = pineconeClient.Index(PINECONE_INDEX_NAME);
 
-    // Pinecone query with metadata filter for CAS number
-    const queryResponse = await index.query({
+    // Build query object with optional CAS filter
+    const queryObj = {
       vector: embedding,
       topK,
-      filter: {
+      includeMetadata: true,
+    };
+
+    // Only include filter if casNumber is provided
+    if (casNumber) {
+      queryObj.filter = {
         casNumber: {
           $eq: casNumber,
         },
-      },
-      includeMetadata: true,
-    });
+      };
+    }
+
+    // Pinecone query with optional metadata filter for CAS number
+    const queryResponse = await index.query(queryObj);
 
     const matches = queryResponse.matches || [];
 
