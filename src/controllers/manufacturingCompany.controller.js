@@ -94,9 +94,46 @@ const getCompanyProfile = async (req, res) => {
 
     logger.info('Company profile request', { manufacturingCompanyId });
 
-    // ========== FETCH COMPANY DETAILS ==========
+    // ========== FETCH EVERYTHING IN PARALLEL ==========
+    // None of these four queries depend on each other's results (all key off
+    // manufacturingCompanyId from the JWT), so run them concurrently instead
+    // of awaiting one after another - cuts total DB round-trip time roughly
+    // to that of the slowest single query instead of the sum of all four.
 
-    const company = await ManufacturingCompany.findById(manufacturingCompanyId);
+    const [company, companyEmail, sellingMaterials, buyingMaterials] = await Promise.all([
+      ManufacturingCompany.findById(manufacturingCompanyId),
+
+      CompanyAccount.findOne({ manufacturingCompanyId })
+        .select('email')
+        .then((account) => account?.email || null)
+        .catch((accountError) => {
+          logger.warn('Error fetching company email', {
+            error: accountError.message,
+            manufacturingCompanyId,
+          });
+          return null;
+        }),
+
+      SellingMaterial.find({ manufacturingCompanyId })
+        .populate('chemicalId')
+        .catch((sellingError) => {
+          logger.error('Error fetching selling materials', {
+            error: sellingError.message,
+            manufacturingCompanyId,
+          });
+          return [];
+        }),
+
+      BuyingMaterial.find({ manufacturingCompanyId })
+        .populate('chemicalId')
+        .catch((buyingError) => {
+          logger.error('Error fetching buying materials', {
+            error: buyingError.message,
+            manufacturingCompanyId,
+          });
+          return [];
+        }),
+    ]);
 
     if (!company) {
       logger.warn('Company not found', { manufacturingCompanyId });
@@ -106,59 +143,14 @@ const getCompanyProfile = async (req, res) => {
     }
 
     logger.info('Company found', { companyId: company._id });
-
-    // ========== FETCH COMPANY EMAIL ==========
-
-    let companyEmail = null;
-    try {
-      const account = await CompanyAccount.findOne({
-        manufacturingCompanyId,
-      }).select('email');
-      companyEmail = account?.email || null;
-    } catch (accountError) {
-      logger.warn('Error fetching company email', {
-        error: accountError.message,
-        manufacturingCompanyId,
-      });
-    }
-
-    // ========== FETCH SELLING MATERIALS ==========
-
-    let sellingMaterials = [];
-    try {
-      sellingMaterials = await SellingMaterial.find({
-        manufacturingCompanyId,
-      }).populate('chemicalId');
-
-      logger.info('Selling materials fetched', {
-        count: sellingMaterials.length,
-        manufacturingCompanyId,
-      });
-    } catch (sellingError) {
-      logger.error('Error fetching selling materials', {
-        error: sellingError.message,
-        manufacturingCompanyId,
-      });
-    }
-
-    // ========== FETCH BUYING MATERIALS ==========
-
-    let buyingMaterials = [];
-    try {
-      buyingMaterials = await BuyingMaterial.find({
-        manufacturingCompanyId,
-      }).populate('chemicalId');
-
-      logger.info('Buying materials fetched', {
-        count: buyingMaterials.length,
-        manufacturingCompanyId,
-      });
-    } catch (buyingError) {
-      logger.error('Error fetching buying materials', {
-        error: buyingError.message,
-        manufacturingCompanyId,
-      });
-    }
+    logger.info('Selling materials fetched', {
+      count: sellingMaterials.length,
+      manufacturingCompanyId,
+    });
+    logger.info('Buying materials fetched', {
+      count: buyingMaterials.length,
+      manufacturingCompanyId,
+    });
 
     // ========== BUILD RESPONSE ==========
 
