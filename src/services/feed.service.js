@@ -3,6 +3,8 @@ const SellingMaterial = require('../models/SellingMaterial');
 const BuyingMaterial = require('../models/BuyingMaterial');
 const ManufacturingCompany = require('../models/ManufacturingCompany');
 const CompanyAccount = require('../models/CompanyAccount');
+const ServiceablePincode = require('../models/ServiceablePincode');
+const LogisticsCompanyAccount = require('../models/LogisticsCompanyAccount');
 const { generateEmbedding } = require('./embedding.service');
 const { searchSellingMaterials } = require('./pinecone.service');
 
@@ -85,6 +87,68 @@ const generateInterestEmbeddings = async (interests) => {
 };
 
 /**
+ * Fetch available logistics companies for a given pincode
+ */
+const fetchAvailableLogisticsForFeed = async (pincode) => {
+  if (!pincode) {
+    return [];
+  }
+
+  try {
+    // Find all serviceable pincodes matching this pincode
+    const serviceablePincodes = await ServiceablePincode.find({
+      pincode,
+    }).populate('logisticsCompanyId');
+
+    if (serviceablePincodes.length === 0) {
+      return [];
+    }
+
+    // Extract unique logistics companies and fetch their account details
+    const logisticsIds = [
+      ...new Set(
+        serviceablePincodes.map((sp) => sp.logisticsCompanyId._id.toString())
+      ),
+    ];
+
+    // Fetch account details for all logistics companies
+    const accountsMap = new Map();
+    const accounts = await LogisticsCompanyAccount.find({
+      logisticsCompanyId: { $in: logisticsIds },
+    }).select('email logisticsCompanyId');
+
+    accounts.forEach((acc) => {
+      accountsMap.set(acc.logisticsCompanyId.toString(), acc.email);
+    });
+
+    // Build logistics company details
+    const logisticsCompanies = serviceablePincodes.map((sp) => ({
+      _id: sp.logisticsCompanyId._id,
+      name: sp.logisticsCompanyId.name,
+      location: sp.logisticsCompanyId.location,
+      address: sp.logisticsCompanyId.address,
+      contactNum: sp.logisticsCompanyId.contactNum,
+      email: accountsMap.get(sp.logisticsCompanyId._id.toString()) || null,
+      createdAt: sp.logisticsCompanyId.createdAt,
+      updatedAt: sp.logisticsCompanyId.updatedAt,
+    }));
+
+    // Remove duplicates based on _id
+    const uniqueLogistics = Array.from(
+      new Map(logisticsCompanies.map((lc) => [lc._id.toString(), lc])).values()
+    );
+
+    return uniqueLogistics;
+  } catch (error) {
+    logger.warn('Error fetching available logistics for feed', {
+      error: error.message,
+      pincode,
+    });
+    return [];
+  }
+};
+
+/**
  * Fetch company details for a selling material
  */
 const fetchCompanyDetails = async (manufacturingCompanyId) => {
@@ -98,13 +162,21 @@ const fetchCompanyDetails = async (manufacturingCompanyId) => {
       return null;
     }
 
+    // Fetch available logistics companies for this pincode
+    let availableLogistics = [];
+    if (company.pincode) {
+      availableLogistics = await fetchAvailableLogisticsForFeed(company.pincode);
+    }
+
     return {
       _id: company._id,
       name: company.name,
       location: company.location,
       address: company.address,
+      pincode: company.pincode || null,
       contactNum: company.contactNum,
       email: account?.email || null,
+      availableLogistics,
       createdAt: company.createdAt,
       updatedAt: company.updatedAt,
       accountCreatedAt: account?.createdAt || null,

@@ -2,11 +2,76 @@ const logger = require('../config/logger');
 const Chemical = require('../models/Chemical');
 const SellingMaterial = require('../models/SellingMaterial');
 const CompanyAccount = require('../models/CompanyAccount');
+const LogisticsCompany = require('../models/LogisticsCompany');
+const ServiceablePincode = require('../models/ServiceablePincode');
+const LogisticsCompanyAccount = require('../models/LogisticsCompanyAccount');
 const { extractCasNumber } = require('../services/llm.service');
 const { generateEmbedding } = require('../services/embedding.service');
 const { searchSellingMaterials } = require('../services/pinecone.service');
 
 const MAX_TOP_K = 50;
+
+/**
+ * Fetch available logistics companies for a given pincode
+ */
+const fetchAvailableLogistics = async (pincode) => {
+  if (!pincode) {
+    return [];
+  }
+
+  try {
+    // Find all serviceable pincodes matching this pincode
+    const serviceablePincodes = await ServiceablePincode.find({
+      pincode,
+    }).populate('logisticsCompanyId');
+
+    if (serviceablePincodes.length === 0) {
+      return [];
+    }
+
+    // Extract unique logistics companies and fetch their account details
+    const logisticsIds = [
+      ...new Set(
+        serviceablePincodes.map((sp) => sp.logisticsCompanyId._id.toString())
+      ),
+    ];
+
+    // Fetch account details for all logistics companies
+    const accountsMap = new Map();
+    const accounts = await LogisticsCompanyAccount.find({
+      logisticsCompanyId: { $in: logisticsIds },
+    }).select('email logisticsCompanyId');
+
+    accounts.forEach((acc) => {
+      accountsMap.set(acc.logisticsCompanyId.toString(), acc.email);
+    });
+
+    // Build logistics company details
+    const logisticsCompanies = serviceablePincodes.map((sp) => ({
+      _id: sp.logisticsCompanyId._id,
+      name: sp.logisticsCompanyId.name,
+      location: sp.logisticsCompanyId.location,
+      address: sp.logisticsCompanyId.address,
+      contactNum: sp.logisticsCompanyId.contactNum,
+      email: accountsMap.get(sp.logisticsCompanyId._id.toString()) || null,
+      createdAt: sp.logisticsCompanyId.createdAt,
+      updatedAt: sp.logisticsCompanyId.updatedAt,
+    }));
+
+    // Remove duplicates based on _id
+    const uniqueLogistics = Array.from(
+      new Map(logisticsCompanies.map((lc) => [lc._id.toString(), lc])).values()
+    );
+
+    return uniqueLogistics;
+  } catch (error) {
+    logger.warn('Error fetching available logistics companies', {
+      error: error.message,
+      pincode,
+    });
+    return [];
+  }
+};
 
 /**
  * Search selling materials by natural language query
@@ -188,15 +253,23 @@ const searchSellingMaterialsByQuery = async (req, res) => {
           continue;
         }
 
-        // Fetch company email from CompanyAccount
+        // Fetch company email and available logistics companies
         let companyEmail = null;
+        let availableLogistics = [];
         try {
           const companyAccount = await CompanyAccount.findOne({
             manufacturingCompanyId: sellingMaterial.manufacturingCompanyId._id,
           }).select('email');
           companyEmail = companyAccount?.email || null;
+
+          // Fetch available logistics companies for this pincode
+          if (sellingMaterial.manufacturingCompanyId.pincode) {
+            availableLogistics = await fetchAvailableLogistics(
+              sellingMaterial.manufacturingCompanyId.pincode
+            );
+          }
         } catch (accountError) {
-          logger.warn('Error fetching company email', {
+          logger.warn('Error fetching company email or logistics', {
             error: accountError.message,
             manufacturingCompanyId: sellingMaterial.manufacturingCompanyId._id,
           });
@@ -225,8 +298,10 @@ const searchSellingMaterialsByQuery = async (req, res) => {
               name: sellingMaterial.manufacturingCompanyId.name,
               location: sellingMaterial.manufacturingCompanyId.location,
               address: sellingMaterial.manufacturingCompanyId.address,
+              pincode: sellingMaterial.manufacturingCompanyId.pincode || null,
               contactNum: sellingMaterial.manufacturingCompanyId.contactNum,
               email: companyEmail,
+              availableLogistics,
             },
           },
         });

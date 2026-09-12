@@ -52,13 +52,14 @@ const createSellingMaterial = async (req, res) => {
     const normalizedCasNumber = chemical.casNumber.trim();
 
     // Validate cadence
-    if (cadence !== 'monthly') {
+    const validCadences = ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'];
+    if (!validCadences.includes(cadence)) {
       logger.warn('Selling material creation - invalid cadence', {
         providedCadence: cadence,
         manufacturingCompanyId,
       });
       return res.status(400).json({
-        message: 'cadence must be "monthly"',
+        message: 'cadence must be one of: daily, weekly, monthly, quarterly, yearly',
       });
     }
 

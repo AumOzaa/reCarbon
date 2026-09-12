@@ -713,7 +713,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | `chemical.formula` | String | Chemical formula | Required only if CAS number is new |
 | `chemical.casNumber` | String | CAS Registry Number | Required, unique identifier for the chemical |
 | `sourceLocation` | String | Where the chemical is sourced from | Required, will be trimmed |
-| `cadence` | String | Supply frequency | Required, must be "monthly" (currently the only option) |
+| `cadence` | String | Supply frequency | Required, must be one of: "daily", "weekly", "monthly", "quarterly", "yearly" |
 | `state` | String | Physical state of the chemical | Required, must be one of: "solid", "liquid", "gas" |
 | `data` | Object | Flexible key-value attributes | Required, can contain any chemical-specific properties (e.g., purity, quantity, concentration, pH, etc.) |
 
@@ -902,12 +902,12 @@ curl -X POST http://localhost:5000/api/selling-materials \
 
 ```json
 {
-  "message": "cadence must be \"monthly\""
+  "message": "cadence must be one of: daily, weekly, monthly, quarterly, yearly"
 }
 ```
 
 **Triggers when:**
-- `cadence` is not "monthly"
+- `cadence` is not one of: daily, weekly, monthly, quarterly, yearly
 
 #### Invalid State
 
@@ -1790,8 +1790,21 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
           "name": "ABC Chemicals Inc.",
           "location": "Ahmedabad, Gujarat",
           "address": "123 Industrial Area, Phase 1",
+          "pincode": "380001",
           "contactNum": "9876543210",
-          "email": "company@example.com"
+          "email": "company@example.com",
+          "availableLogistics": [
+            {
+              "_id": "507f1f77bcf86cd799439020",
+              "name": "FastShip Logistics",
+              "location": "Ahmedabad, Gujarat",
+              "address": "456 Logistics Hub, Phase 2",
+              "contactNum": "9876543220",
+              "email": "logistics@fastship.com",
+              "createdAt": "2024-09-10T12:00:00.000Z",
+              "updatedAt": "2024-09-10T12:00:00.000Z"
+            }
+          ]
         }
       }
     },
@@ -1822,8 +1835,10 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
           "name": "XYZ Pharmaceuticals Ltd.",
           "location": "Mumbai, Maharashtra",
           "address": "456 Business Park, Tower B",
+          "pincode": "400001",
           "contactNum": "9123456789",
-          "email": "sales@xyzpharma.com"
+          "email": "sales@xyzpharma.com",
+          "availableLogistics": []
         }
       }
     }
@@ -1860,8 +1875,18 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
 | `results[].sellingMaterial.company.name` | String | Company name |
 | `results[].sellingMaterial.company.location` | String | City/Region where company is located |
 | `results[].sellingMaterial.company.address` | String | Physical address of the company |
+| `results[].sellingMaterial.company.pincode` | String | Company facility pincode (Indian) |
 | `results[].sellingMaterial.company.contactNum` | String | Company phone number |
 | `results[].sellingMaterial.company.email` | String | Company email address |
+| `results[].sellingMaterial.company.availableLogistics` | Array | Array of logistics companies that service this pincode (empty if pincode not set) |
+| `results[].sellingMaterial.company.availableLogistics[].\_id` | String | MongoDB ObjectId of the logistics company |
+| `results[].sellingMaterial.company.availableLogistics[].name` | String | Logistics company name |
+| `results[].sellingMaterial.company.availableLogistics[].location` | String | Logistics company location |
+| `results[].sellingMaterial.company.availableLogistics[].address` | String | Logistics company address |
+| `results[].sellingMaterial.company.availableLogistics[].contactNum` | String | Logistics company phone number |
+| `results[].sellingMaterial.company.availableLogistics[].email` | String | Logistics company email address |
+| `results[].sellingMaterial.company.availableLogistics[].createdAt` | String | ISO timestamp when logistics company was created |
+| `results[].sellingMaterial.company.availableLogistics[].updatedAt` | String | ISO timestamp of last update to logistics company |
 
 ### Empty Results Response
 
@@ -2126,8 +2151,21 @@ curl -X GET "http://localhost:5000/api/feed?page=1&limit=20" \
         "name": "ABC Chemicals Inc.",
         "location": "Ahmedabad, Gujarat",
         "address": "123 Industrial Area, Phase 1",
+        "pincode": "380001",
         "contactNum": "9876543210",
         "email": "company@example.com",
+        "availableLogistics": [
+          {
+            "_id": "507f1f77bcf86cd799439020",
+            "name": "FastShip Logistics",
+            "location": "Ahmedabad, Gujarat",
+            "address": "456 Logistics Hub, Phase 2",
+            "contactNum": "9876543220",
+            "email": "logistics@fastship.com",
+            "createdAt": "2024-09-10T12:00:00.000Z",
+            "updatedAt": "2024-09-10T12:00:00.000Z"
+          }
+        ],
         "createdAt": "2024-09-12T08:00:00.000Z",
         "updatedAt": "2024-09-12T08:00:00.000Z",
         "accountCreatedAt": "2024-09-12T08:00:00.000Z",
@@ -2155,8 +2193,18 @@ curl -X GET "http://localhost:5000/api/feed?page=1&limit=20" \
 | `results[].company.name` | String | Company name |
 | `results[].company.location` | String | City/Region where company is located |
 | `results[].company.address` | String | Physical address of the seller company |
+| `results[].company.pincode` | String | Company facility pincode (Indian) |
 | `results[].company.contactNum` | String | Company phone number |
 | `results[].company.email` | String | Company email address |
+| `results[].company.availableLogistics` | Array | Array of logistics companies that service this pincode (empty if pincode not set) |
+| `results[].company.availableLogistics[].\_id` | String | MongoDB ObjectId of the logistics company |
+| `results[].company.availableLogistics[].name` | String | Logistics company name |
+| `results[].company.availableLogistics[].location` | String | Logistics company location |
+| `results[].company.availableLogistics[].address` | String | Logistics company address |
+| `results[].company.availableLogistics[].contactNum` | String | Logistics company phone number |
+| `results[].company.availableLogistics[].email` | String | Logistics company email address |
+| `results[].company.availableLogistics[].createdAt` | String | ISO timestamp when logistics company was created |
+| `results[].company.availableLogistics[].updatedAt` | String | ISO timestamp of last update to logistics company |
 | `results[].company.createdAt` | String | ISO timestamp when company was created |
 | `results[].company.updatedAt` | String | ISO timestamp of last company update |
 | `results[].company.accountCreatedAt` | String | ISO timestamp when company account was created |

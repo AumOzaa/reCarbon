@@ -19,7 +19,7 @@ const SellingMaterialSchema = new mongoose.Schema(
     },
     cadence: {
       type: String,
-      enum: ['monthly'],
+      enum: ['daily', 'weekly', 'monthly', 'quarterly', 'yearly'],
       required: true,
     },
     state: {
