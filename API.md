@@ -1,0 +1,1623 @@
+# ReCarbon API Documentation
+
+Complete API reference for the ReCarbon B2B Chemical Marketplace.
+
+---
+
+## Table of Contents
+
+1. [Health Check](#health-check)
+2. [Manufacturing Company Registration](#manufacturing-company-registration)
+3. [Login](#login)
+4. [Create Selling Material](#create-selling-material)
+5. [Create Buying Material](#create-buying-material)
+6. [Search Selling Materials](#search-selling-materials)
+7. [Error Responses](#error-responses)
+8. [Status Codes](#status-codes)
+
+---
+
+## Health Check
+
+Check if the API is running.
+
+### Endpoint
+
+```http
+GET /api/health
+```
+
+### Request
+
+No request body required.
+
+```bash
+curl -X GET http://localhost:5000/api/health
+```
+
+### Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "API is running"
+}
+```
+
+---
+
+## Manufacturing Company Registration
+
+Register a new manufacturing company and create a login account.
+
+### Endpoint
+
+```http
+POST /api/manufacturing-companies/register
+```
+
+### Request Headers
+
+```http
+Content-Type: application/json
+```
+
+### Request Body
+
+**Required Fields:** All fields are mandatory.
+
+```json
+{
+  "name": "ABC Chemicals Inc.",
+  "location": "Ahmedabad, Gujarat",
+  "address": "123 Industrial Area, Phase 1",
+  "contactNum": "9876543210",
+  "email": "company@example.com",
+  "password": "securePassword123"
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `name` | String | Company name | Required, will be trimmed |
+| `location` | String | City/Region where company is located | Required, will be trimmed |
+| `address` | String | Physical address of company | Required, will be trimmed |
+| `contactNum` | String | Contact phone number | Required, stored as string |
+| `email` | String | Company email for login | Required, will be normalized (trimmed + lowercased), must be unique |
+| `password` | String | Login password (plaintext) | Required, will be hashed with bcrypt before storage |
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/manufacturing-companies/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "ABC Chemicals Inc.",
+    "location": "Ahmedabad, Gujarat",
+    "address": "123 Industrial Area, Phase 1",
+    "contactNum": "9876543210",
+    "email": "company@example.com",
+    "password": "securePassword123"
+  }'
+```
+
+### Success Response
+
+**Status Code:** `201 Created`
+
+```json
+{
+  "message": "Company registered successfully",
+  "companyId": "507f1f77bcf86cd799439011"
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `companyId` | String | MongoDB ObjectId of the created ManufacturingCompany |
+
+### Error Responses
+
+#### Missing Required Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "All fields are required: name, location, address, contactNum, email, password"
+}
+```
+
+**Triggers when:**
+- Any of the 6 required fields are missing or empty
+- Request body is malformed
+
+#### Duplicate Email
+
+**Status Code:** `409 Conflict`
+
+```json
+{
+  "message": "An account with this email already exists"
+}
+```
+
+**Triggers when:**
+- The email (after normalization) already exists in the database
+- A company is already registered with this email
+
+#### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred during registration. Please try again later."
+}
+```
+
+**Triggers when:**
+- Database connection fails
+- Unexpected error occurs during processing
+- Stack trace will be logged in `logs/error.log`
+
+### Registration Flow
+
+```
+1. Validate all required fields are present
+   ↓
+2. Normalize email (trim + lowercase)
+   ↓
+3. Check if email already exists in CompanyAccount
+   ├─ If yes: Return 409 Conflict
+   └─ If no: Continue
+   ↓
+4. Create ManufacturingCompany document
+   ├─ Name: trimmed
+   ├─ Location: trimmed
+   ├─ Address: trimmed
+   └─ ContactNum: as provided
+   ↓
+5. Hash password using bcrypt (10 salt rounds)
+   ↓
+6. Create CompanyAccount document
+   ├─ Email: normalized
+   ├─ PasswordHash: bcrypt hash
+   └─ ManufacturingCompanyId: references new company
+   ↓
+7. Log success with company and account IDs
+   ↓
+8. Return 201 with companyId
+```
+
+---
+
+## Login
+
+Authenticate a company and receive a JWT token.
+
+### Endpoint
+
+```http
+POST /api/auth/login
+```
+
+### Request Headers
+
+```http
+Content-Type: application/json
+```
+
+### Request Body
+
+**Required Fields:** Both fields are mandatory.
+
+```json
+{
+  "email": "company@example.com",
+  "password": "securePassword123"
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `email` | String | Company email | Required, will be normalized (trimmed + lowercased) |
+| `password` | String | Login password (plaintext) | Required, will be verified against bcrypt hash |
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "company@example.com",
+    "password": "securePassword123"
+  }'
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2NvdW50SWQiOiI1MDdmMWY3N2JjZjg2Y2Q3OTk0MzkwMTEiLCJtYW51ZmFjdHVyaW5nQ29tcGFueUlkIjoiNTA3ZjFmNzdiY2Y4NmNkNzk5NDM5MDExIiwiaWF0IjoxNjk0NDcyODAwLCJleHAiOjE2OTUwNzc2MDB9.abcdefghijklmnopqrstuvwxyz",
+  "companyId": "507f1f77bcf86cd799439011"
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `token` | String | JWT token for authenticated requests (valid for 7 days by default) |
+| `companyId` | String | MongoDB ObjectId of the ManufacturingCompany |
+
+#### JWT Token Payload
+
+```json
+{
+  "accountId": "507f1f77bcf86cd799439012",
+  "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+  "iat": 1694472800,
+  "exp": 1695077600
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `accountId` | String | MongoDB ObjectId of the CompanyAccount |
+| `manufacturingCompanyId` | String | MongoDB ObjectId of the ManufacturingCompany |
+| `iat` | Number | Issued at timestamp (seconds since epoch) |
+| `exp` | Number | Expiration timestamp (seconds since epoch) |
+
+### Error Responses
+
+#### Missing Required Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Email and password are required"
+}
+```
+
+**Triggers when:**
+- `email` field is missing or empty
+- `password` field is missing or empty
+- Request body is malformed
+
+#### Invalid Credentials
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid email or password"
+}
+```
+
+**Triggers when:**
+- Email is not found in database
+- Password does not match the stored bcrypt hash
+- **Note:** Same generic message for both cases for security (no email enumeration)
+
+### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred during login. Please try again later."
+}
+```
+
+**Triggers when:**
+- Database connection fails
+- Unexpected error occurs during processing
+- Stack trace will be logged in `logs/error.log`
+
+### Login Flow
+
+```
+1. Validate email and password are provided
+   ├─ If missing: Return 400 Bad Request
+   └─ If present: Continue
+   ↓
+2. Normalize email (trim + lowercase)
+   ↓
+3. Find CompanyAccount by normalized email
+   ├─ If not found: Return 401 Unauthorized
+   └─ If found: Continue
+   ↓
+4. Compare supplied password with stored bcrypt hash
+   ├─ If mismatch: Return 401 Unauthorized
+   └─ If match: Continue
+   ↓
+5. Create JWT token with:
+   ├─ accountId: from CompanyAccount._id
+   ├─ manufacturingCompanyId: from CompanyAccount.manufacturingCompanyId
+   └─ expiration: JWT_EXPIRES_IN (default: 7 days)
+   ↓
+6. Log successful login
+   ↓
+7. Return 200 with token and companyId
+```
+
+---
+
+## Create Selling Material
+
+Create a selling material listing for an authenticated manufacturing company.
+
+This endpoint allows a company to list a chemical material that it can supply to buyers.
+
+### Endpoint
+
+```http
+POST /api/selling-materials
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The JWT token is obtained from the [Login](#login) endpoint and contains:
+- `accountId` — Company account ID
+- `manufacturingCompanyId` — Company ID (automatically used for the listing)
+
+### Request Headers
+
+```http
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Request Body
+
+```json
+{
+  "chemical": {
+    "name": "Hydrochloric Acid",
+    "formula": "HCl",
+    "casNumber": "7647-01-0"
+  },
+  "sourceLocation": "Ahmedabad, Gujarat",
+  "cadence": "monthly",
+  "state": "liquid",
+  "data": {
+    "purity": 99,
+    "quantity": 20,
+    "unit": "tonnes"
+  }
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `chemical` | Object | Chemical information | Required |
+| `chemical.name` | String | Chemical name | Required only if CAS number is new (doesn't exist in database) |
+| `chemical.formula` | String | Chemical formula | Required only if CAS number is new |
+| `chemical.casNumber` | String | CAS Registry Number | Required, unique identifier for the chemical |
+| `sourceLocation` | String | Where the chemical is sourced from | Required, will be trimmed |
+| `cadence` | String | Supply frequency | Required, must be "monthly" (currently the only option) |
+| `state` | String | Physical state of the chemical | Required, must be one of: "solid", "liquid", "gas" |
+| `data` | Object | Flexible key-value attributes | Required, can contain any chemical-specific properties (e.g., purity, quantity, concentration, pH, etc.) |
+
+#### CAS Number Resolution
+
+**The CAS number is the canonical chemical identity.**
+
+- **If CAS number exists:** Uses the existing Chemical record. The `name` and `formula` from the request are ignored.
+- **If CAS number is new:** Creates a new Chemical record with the provided name and formula.
+- **Race condition handling:** If two requests create the same CAS simultaneously, the system detects it and reuses the existing record.
+
+Example:
+
+```
+Request 1: CAS 7647-01-0 (new) → Creates Chemical with name "Hydrochloric Acid"
+Request 2: CAS 7647-01-0 (new) → Reuses the Chemical created by Request 1
+Request 3: CAS 7647-01-0 (exists) → Uses the existing Chemical (never overwrites name/formula)
+```
+
+#### Data Field (Flexible Attributes)
+
+The `data` field is intentionally flexible to support different chemical-specific attributes:
+
+```json
+// Example 1: Acid with purity and quantity
+{
+  "purity": 99.5,
+  "quantity": 20,
+  "unit": "tonnes"
+}
+
+// Example 2: Solution with concentration and pH
+{
+  "concentration": 40,
+  "ph": 7.2,
+  "temperature": 25
+}
+
+// Example 3: Specialized chemical with custom attributes
+{
+  "viscosity": 12,
+  "density": 1.2,
+  "flammability": "high"
+}
+```
+
+The backend does NOT hardcode or validate specific attributes. The frontend controls what data is sent.
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/selling-materials \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "chemical": {
+      "name": "Hydrochloric Acid",
+      "formula": "HCl",
+      "casNumber": "7647-01-0"
+    },
+    "sourceLocation": "Ahmedabad, Gujarat",
+    "cadence": "monthly",
+    "state": "liquid",
+    "data": {
+      "purity": 99,
+      "quantity": 20,
+      "unit": "tonnes"
+    }
+  }'
+```
+
+### Success Response
+
+**Status Code:** `201 Created`
+
+```json
+{
+  "message": "Selling material created successfully",
+  "sellingMaterial": {
+    "_id": "507f1f77bcf86cd799439013",
+    "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+    "chemicalId": "507f1f77bcf86cd799439014",
+    "sourceLocation": "Ahmedabad, Gujarat",
+    "cadence": "monthly",
+    "state": "liquid",
+    "data": {
+      "purity": 99,
+      "quantity": 20,
+      "unit": "tonnes"
+    },
+    "createdAt": "2024-09-12T10:30:00.000Z",
+    "updatedAt": "2024-09-12T10:30:00.000Z"
+  }
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `sellingMaterial._id` | String | MongoDB ObjectId of the created SellingMaterial |
+| `sellingMaterial.manufacturingCompanyId` | String | Company ID (from JWT) |
+| `sellingMaterial.chemicalId` | String | MongoDB ObjectId of the Chemical (resolved or created) |
+| `sellingMaterial.sourceLocation` | String | Source location (trimmed) |
+| `sellingMaterial.cadence` | String | Supply frequency |
+| `sellingMaterial.state` | String | Physical state |
+| `sellingMaterial.data` | Object | Flexible attributes |
+| `sellingMaterial.createdAt` | String | ISO timestamp |
+| `sellingMaterial.updatedAt` | String | ISO timestamp |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT secret verification fails
+
+#### Missing Required Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "All fields are required: chemical, sourceLocation, cadence, state, data"
+}
+```
+
+**Triggers when:**
+- Any of the required top-level fields are missing
+
+#### Missing CAS Number
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "chemical.casNumber is required"
+}
+```
+
+**Triggers when:**
+- `chemical.casNumber` is missing or empty
+
+#### Missing Chemical Details for New Chemical
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "For a new chemical, chemical.name and chemical.formula are required"
+}
+```
+
+**Triggers when:**
+- CAS number doesn't exist in database
+- `chemical.name` or `chemical.formula` is missing
+
+#### Invalid Cadence
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "cadence must be \"monthly\""
+}
+```
+
+**Triggers when:**
+- `cadence` is not "monthly"
+
+#### Invalid State
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "state must be one of: solid, liquid, gas"
+}
+```
+
+**Triggers when:**
+- `state` is not one of the allowed values
+
+#### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred while creating the selling material"
+}
+```
+
+**Triggers when:**
+- Database connection fails
+- Unexpected error during processing
+- Detailed error logged in `logs/error.log`
+
+### Creation Flow
+
+```
+1. Verify JWT token in Authorization header
+   ├─ If invalid/missing: Return 401 Unauthorized
+   └─ If valid: Extract manufacturingCompanyId
+   ↓
+2. Validate all required fields
+   ├─ If missing: Return 400 Bad Request
+   └─ If present: Continue
+   ↓
+3. Validate CAS number provided
+   ├─ If missing: Return 400 Bad Request
+   └─ If present: Continue
+   ↓
+4. Normalize CAS number (trim whitespace)
+   ↓
+5. Validate cadence is "monthly"
+   ├─ If invalid: Return 400 Bad Request
+   └─ If valid: Continue
+   ↓
+6. Validate state is one of: solid, liquid, gas
+   ├─ If invalid: Return 400 Bad Request
+   └─ If valid: Continue
+   ↓
+7. Search for existing Chemical by CAS number
+   ├─ If found: Use existing Chemical
+   └─ If not found: Continue
+   ↓
+8. If Chemical not found:
+   ├─ Validate chemical.name and chemical.formula provided
+   │  ├─ If missing: Return 400 Bad Request
+   │  └─ If present: Continue
+   ├─ Attempt to create new Chemical
+   │  ├─ If success: Use new Chemical
+   │  ├─ If race condition (duplicate CAS): Retry query and use existing
+   │  └─ If other error: Return 500 Internal Server Error
+   └─ Continue
+   ↓
+9. Create SellingMaterial document
+   ├─ manufacturingCompanyId: from JWT
+   ├─ chemicalId: resolved/created Chemical ID
+   ├─ sourceLocation: from request (trimmed)
+   ├─ cadence: from request
+   ├─ state: from request
+   └─ data: from request
+   ↓
+10. Log success with IDs
+    ↓
+11. Return 201 Created with SellingMaterial details
+```
+
+### Multiple Listings
+
+A manufacturing company can create multiple SellingMaterial records for:
+- **The same chemical** with different quantities/qualities
+- **Different chemicals**
+
+Example:
+
+```
+Company A
+  ├── HCl: 20 tonnes/month (purity 99)
+  ├── HCl: 50 tonnes/month (purity 95)
+  └── H2SO4: 30 tonnes/month
+```
+
+Each API call creates a separate SellingMaterial record.
+
+### Important Notes
+
+1. **CAS is Canonical:** The CAS number is the single source of truth for chemical identity. Different requests with the same CAS will reference the same Chemical record.
+
+2. **Company ID from JWT:** The `manufacturingCompanyId` is extracted from the JWT token. The frontend cannot specify a different company ID.
+
+3. **No Data in Chemical:** The SellingMaterial stores only `chemicalId`, not the chemical's name, formula, or CAS number. Query the Chemical separately to get those details.
+
+4. **Flexible Data Field:** The `data` field supports any key-value pairs. The backend doesn't validate or hardcode specific attributes.
+
+5. **Race Conditions Handled:** If two requests create the same new CAS simultaneously, the system detects the duplicate-key error and reuses the existing Chemical.
+
+---
+
+## Create Buying Material
+
+Create a buying material request for an authenticated manufacturing company.
+
+This endpoint allows a company to indicate that it is seeking a specific chemical material to purchase.
+
+### Endpoint
+
+```http
+POST /api/buying-materials
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The JWT token is obtained from the [Login](#login) endpoint and contains:
+- `accountId` — Company account ID
+- `manufacturingCompanyId` — Company ID (automatically used for the request)
+
+### Request Headers
+
+```http
+Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Request Body
+
+```json
+{
+  "chemical": {
+    "name": "Hydrochloric Acid",
+    "formula": "HCl",
+    "casNumber": "7647-01-0"
+  },
+  "reqLocation": "Ahmedabad, Gujarat",
+  "data": {
+    "purity": 99,
+    "quantity": 10,
+    "unit": "tonnes"
+  }
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `chemical` | Object | Chemical information | Required |
+| `chemical.name` | String | Chemical name | Required only if CAS number is new |
+| `chemical.formula` | String | Chemical formula | Required only if CAS number is new |
+| `chemical.casNumber` | String | CAS Registry Number | Required, unique identifier for the chemical |
+| `reqLocation` | String | Where the company needs the chemical delivered | Required, will be trimmed |
+| `data` | Object | Flexible key-value attributes | Optional, can contain any chemical-specific properties |
+
+#### CAS Number Resolution
+
+**The CAS number is the canonical chemical identity.**
+
+- **If CAS number exists:** Uses the existing Chemical record. The `name` and `formula` from the request are ignored.
+- **If CAS number is new:** Creates a new Chemical record with the provided name and formula.
+- **Race condition handling:** If two requests create the same CAS simultaneously, the system detects it and reuses the existing record.
+
+#### Duplicate Prevention
+
+**Only ONE buying material request per company-chemical pair.**
+
+If a company already has a buying-material request for a specific chemical, attempting to create another will be rejected with `409 Conflict`.
+
+The existing request must be explicitly deleted before a new one can be created for the same chemical.
+
+#### Data Field (Flexible Attributes)
+
+The `data` field is intentionally flexible and OPTIONAL:
+
+```json
+// Example 1: With data
+{
+  "purity": 99,
+  "quantity": 10,
+  "unit": "tonnes"
+}
+
+// Example 2: Empty or minimal data
+{}
+```
+
+The backend does NOT hardcode or validate specific attributes.
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/buying-materials \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "chemical": {
+      "name": "Hydrochloric Acid",
+      "formula": "HCl",
+      "casNumber": "7647-01-0"
+    },
+    "reqLocation": "Ahmedabad, Gujarat",
+    "data": {
+      "purity": 99,
+      "quantity": 10,
+      "unit": "tonnes"
+    }
+  }'
+```
+
+### Success Response
+
+**Status Code:** `201 Created`
+
+```json
+{
+  "message": "Buying material created successfully",
+  "buyingMaterial": {
+    "_id": "507f1f77bcf86cd799439015",
+    "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+    "chemicalId": "507f1f77bcf86cd799439014",
+    "reqLocation": "Ahmedabad, Gujarat",
+    "data": {
+      "purity": 99,
+      "quantity": 10,
+      "unit": "tonnes"
+    },
+    "createdAt": "2024-09-12T10:35:00.000Z",
+    "updatedAt": "2024-09-12T10:35:00.000Z"
+  }
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `buyingMaterial._id` | String | MongoDB ObjectId of the created BuyingMaterial |
+| `buyingMaterial.manufacturingCompanyId` | String | Company ID (from JWT) |
+| `buyingMaterial.chemicalId` | String | MongoDB ObjectId of the Chemical (resolved or created) |
+| `buyingMaterial.reqLocation` | String | Required location (trimmed) |
+| `buyingMaterial.data` | Object | Flexible attributes |
+| `buyingMaterial.createdAt` | String | ISO timestamp |
+| `buyingMaterial.updatedAt` | String | ISO timestamp |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT secret verification fails
+
+#### Missing Required Fields
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "All fields are required: chemical, reqLocation"
+}
+```
+
+**Triggers when:**
+- `chemical` or `reqLocation` is missing
+
+#### Missing CAS Number
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "chemical.casNumber is required"
+}
+```
+
+**Triggers when:**
+- `chemical.casNumber` is missing or empty
+
+#### Missing Chemical Details for New Chemical
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "For a new chemical, chemical.name and chemical.formula are required"
+}
+```
+
+**Triggers when:**
+- CAS number doesn't exist in database
+- `chemical.name` or `chemical.formula` is missing
+
+#### Duplicate Buying Material
+
+**Status Code:** `409 Conflict`
+
+```json
+{
+  "message": "A buying material for this chemical already exists. Delete the existing request before creating a new one."
+}
+```
+
+**Triggers when:**
+- Company already has a buying-material request for this chemical
+- Enforced at both application and database level
+
+#### Server Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred while creating the buying material"
+}
+```
+
+**Triggers when:**
+- Database connection fails
+- Unexpected error during processing
+- Detailed error logged in `logs/error.log`
+
+### Creation Flow
+
+```
+1. Verify JWT token in Authorization header
+   ├─ If invalid/missing: Return 401 Unauthorized
+   └─ If valid: Extract manufacturingCompanyId
+   ↓
+2. Validate required fields (chemical, reqLocation)
+   ├─ If missing: Return 400 Bad Request
+   └─ If present: Continue
+   ↓
+3. Validate CAS number provided
+   ├─ If missing: Return 400 Bad Request
+   └─ If present: Continue
+   ↓
+4. Normalize CAS number (trim whitespace)
+   ↓
+5. Search for existing Chemical by CAS number
+   ├─ If found: Use existing Chemical
+   └─ If not found: Continue
+   ↓
+6. If Chemical not found:
+   ├─ Validate chemical.name and chemical.formula provided
+   │  ├─ If missing: Return 400 Bad Request
+   │  └─ If present: Continue
+   ├─ Attempt to create new Chemical
+   │  ├─ If success: Use new Chemical
+   │  ├─ If race condition (duplicate CAS): Retry query and use existing
+   │  └─ If other error: Return 500 Internal Server Error
+   └─ Continue
+   ↓
+7. Check for existing buying material (company + chemical)
+   ├─ If exists: Return 409 Conflict
+   └─ If not exists: Continue
+   ↓
+8. Create BuyingMaterial document
+   ├─ manufacturingCompanyId: from JWT
+   ├─ chemicalId: resolved/created Chemical ID
+   ├─ reqLocation: from request (trimmed)
+   └─ data: from request (optional, defaults to empty object)
+   ↓
+9. Log success with IDs
+   ↓
+10. Return 201 Created with BuyingMaterial details
+```
+
+### Duplicate Prevention
+
+Each manufacturing company can have ONLY ONE buying-material request for each specific chemical.
+
+**Database Constraint:** Unique compound index on `(manufacturingCompanyId, chemicalId)` ensures this at the database level.
+
+Example:
+
+```
+Company A cannot have two buying requests for HCl
+Company A can have one HCl request and one H2SO4 request
+Company B can have a separate HCl request
+```
+
+To create a new buying request for the same chemical, the existing one must be deleted first.
+
+### Important Notes
+
+1. **CAS is Canonical:** The CAS number is the single source of truth for chemical identity.
+
+2. **Company ID from JWT:** The `manufacturingCompanyId` is extracted from the JWT token. The frontend cannot specify a different company ID.
+
+3. **No Data in Chemical:** The BuyingMaterial stores only `chemicalId`, not the chemical's name, formula, or CAS number.
+
+4. **Flexible Data Field:** The `data` field is OPTIONAL and supports any key-value pairs.
+
+5. **Duplicate Prevention:** Enforced at both application level (409 response) and database level (unique index).
+
+6. **Race Conditions Handled:** If two requests create the same new CAS simultaneously, the system detects the duplicate-key error and reuses the existing Chemical.
+
+---
+
+## Search Selling Materials
+
+Search for selling material listings using natural language query with automatic CAS number extraction.
+
+This endpoint accepts a buyer's natural-language query, automatically extracts the chemical CAS number using gpt-oss:120b-cloud via Ollama Cloud, generates an embedding of the full query using embeddinggemma:latest via local Ollama, searches Pinecone for semantically similar listings filtered by CAS number, and returns matching SellingMaterial records from MongoDB.
+
+### Endpoint
+
+```http
+POST /api/search/selling-materials
+```
+
+### Authentication
+
+**Not required** for this first version.
+
+### Request Headers
+
+```http
+Content-Type: application/json
+```
+
+### Request Body
+
+```json
+{
+  "query": "I need hydrochloric acid CAS 7647-01-0 with purity around 99%",
+  "topK": 10
+}
+```
+
+#### Field Descriptions
+
+| Field | Type | Description | Constraints |
+|-------|------|-------------|------------|
+| `query` | String | Natural language search query | Required, non-empty |
+| `topK` | Number | Number of top results to return | Optional, default 10, max 50, positive integer |
+
+### Request Example
+
+```bash
+curl -X POST http://localhost:5000/api/search/selling-materials \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "I need hydrochloric acid CAS 7647-01-0 with purity around 99%",
+    "topK": 5
+  }'
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "query": "I need hydrochloric acid CAS 7647-01-0 with purity around 99%",
+  "casNumber": "7647-01-0",
+  "topK": 5,
+  "results": [
+    {
+      "score": 0.92,
+      "sellingMaterial": {
+        "_id": "507f1f77bcf86cd799439016",
+        "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+        "chemicalId": "507f1f77bcf86cd799439014",
+        "sourceLocation": "Ahmedabad, Gujarat",
+        "cadence": "monthly",
+        "state": "liquid",
+        "data": {
+          "purity": 99,
+          "quantity": 20,
+          "unit": "tonnes"
+        },
+        "embeddingId": "sellingMaterial:507f1f77bcf86cd799439016",
+        "createdAt": "2024-09-12T10:35:00.000Z",
+        "updatedAt": "2024-09-12T10:35:00.000Z",
+        "chemical": {
+          "_id": "507f1f77bcf86cd799439014",
+          "name": "Hydrochloric Acid",
+          "formula": "HCl",
+          "casNumber": "7647-01-0"
+        }
+      }
+    },
+    {
+      "score": 0.89,
+      "sellingMaterial": {
+        "_id": "507f1f77bcf86cd799439017",
+        "manufacturingCompanyId": "507f1f77bcf86cd799439012",
+        "chemicalId": "507f1f77bcf86cd799439014",
+        "sourceLocation": "Mumbai, Maharashtra",
+        "cadence": "monthly",
+        "state": "liquid",
+        "data": {
+          "purity": 98.5,
+          "quantity": 50,
+          "unit": "tonnes"
+        },
+        "embeddingId": "sellingMaterial:507f1f77bcf86cd799439017",
+        "createdAt": "2024-09-12T10:40:00.000Z",
+        "updatedAt": "2024-09-12T10:40:00.000Z",
+        "chemical": {
+          "_id": "507f1f77bcf86cd799439014",
+          "name": "Hydrochloric Acid",
+          "formula": "HCl",
+          "casNumber": "7647-01-0"
+        }
+      }
+    }
+  ]
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `query` | String | The original search query |
+| `casNumber` | String | Extracted CAS number (from LLM) |
+| `topK` | Number | Number of results requested |
+| `results` | Array | Array of matching SellingMaterials |
+| `results[].score` | Number | Pinecone similarity score (0-1, higher is better) |
+| `results[].sellingMaterial` | Object | Full SellingMaterial document |
+| `results[].sellingMaterial.chemical` | Object | Populated Chemical reference (name, formula, CAS) |
+
+### Empty Results Response
+
+When no seller listings match the CAS number:
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "query": "I need sulfuric acid CAS 7664-93-9",
+  "casNumber": "7664-93-9",
+  "topK": 10,
+  "results": []
+}
+```
+
+### Error Responses
+
+#### Missing Query
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Search query is required"
+}
+```
+
+**Triggers when:**
+- `query` field is missing
+- `query` is empty or contains only whitespace
+
+#### CAS Not Extracted
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Please provide the CAS number of the chemical you want to search for."
+}
+```
+
+**Triggers when:**
+- LLM cannot extract a CAS number from the query
+- The query does not contain a recognizable CAS number
+
+#### Invalid topK
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "topK must be a positive integer"
+}
+```
+
+**Triggers when:**
+- `topK` is not an integer
+- `topK` is less than 1
+
+#### Chemical Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "No chemical with this CAS number exists in the marketplace."
+}
+```
+
+**Triggers when:**
+- Extracted CAS number does not match any Chemical in MongoDB
+- No seller listings are available for this chemical
+
+#### LLM Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "Unable to process the search query."
+}
+```
+
+**Triggers when:**
+- Ollama Cloud API call fails
+- LLM response is invalid/malformed
+- CAS extraction logic fails
+
+#### Embedding Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "Unable to process the search query."
+}
+```
+
+**Triggers when:**
+- Local Ollama embedding generation fails
+- Embedding dimension is invalid
+
+#### Pinecone Error
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "Unable to search seller listings."
+}
+```
+
+**Triggers when:**
+- Pinecone vector search fails
+- Pinecone is not ready or configured
+
+### Search Pipeline
+
+```
+1. Validate query (required, non-empty)
+   ├─ If invalid: Return 400 Bad Request
+   └─ If valid: Continue
+
+2. Validate topK (if provided)
+   ├─ If invalid: Return 400 Bad Request
+   ├─ If > 50: Clamp to 50
+   └─ If valid: Continue
+
+3. Extract CAS number using LLM (gpt-oss:120b-cloud)
+   ├─ If LLM fails: Return 500 Internal Server Error
+   ├─ If CAS not found: Return 400 Bad Request
+   └─ If CAS found: Continue
+
+4. Normalize CAS number (trim whitespace)
+   ↓
+
+5. Verify Chemical exists in MongoDB
+   ├─ If not found: Return 404 Not Found
+   └─ If found: Continue
+
+6. Generate embedding using embeddinggemma:latest
+   ├─ If fails: Return 500 Internal Server Error
+   └─ If succeeds: Continue
+
+7. Search Pinecone with CAS metadata filter
+   ├─ Vector: Generated query embedding
+   ├─ Filter: casNumber = extracted CAS (hard filter)
+   ├─ topK: Requested or default
+   ├─ If fails: Return 500 Internal Server Error
+   └─ If succeeds: Get matches with scores
+
+8. For each Pinecone match:
+   ├─ Extract sellingMaterialId from metadata
+   ├─ Fetch from MongoDB
+   ├─ Populate Chemical reference
+   ├─ If stale/not found: Skip (log warning)
+   └─ If valid: Add to results (preserving score order)
+
+9. Return 200 OK with results (Pinecone order preserved)
+```
+
+### Important Notes
+
+1. **CAS is Hard Filter:** Only sellers with matching CAS number appear in results. Different chemicals are never shown regardless of semantic similarity.
+
+2. **LLM Extracts CAS:** The query must contain a CAS number. Chemical-name-only searches are rejected for this first iteration.
+
+3. **Semantic Ranking:** Results are ranked by Pinecone similarity (cosine distance) of embeddings. The full buyer query is embedded, not just the CAS number.
+
+4. **No Hardcoded Filters:** Only CAS number is filtered. Location, purity, quantity, and other attributes are not hard-filtered (future enhancement).
+
+5. **Stale Vector Handling:** If Pinecone returns a vector for a deleted SellingMaterial, that result is skipped and logged. The search continues successfully with valid results.
+
+6. **MongoDB Source of Truth:** Pinecone provides ranking. MongoDB provides authoritative seller data returned to the buyer.
+
+7. **topK Clamping:** If client requests more than 50 results, the request is either rejected or the value is clamped to 50 on the server.
+
+---
+
+## Error Responses
+
+### Error Response Format
+
+All error responses follow this format:
+
+```json
+{
+  "message": "Error description"
+}
+```
+
+### Common Error Status Codes
+
+| Status Code | Meaning | Use Case |
+|------------|---------|----------|
+| `400` | Bad Request | Missing or invalid fields in request |
+| `401` | Unauthorized | Authentication failed (invalid credentials) |
+| `409` | Conflict | Resource already exists (duplicate email) |
+| `500` | Internal Server Error | Server-side error during processing |
+
+### Error Handling Strategy
+
+1. **Client receives generic error message** — Safe, doesn't expose implementation details
+2. **Detailed error logged in `logs/error.log`** — Useful for debugging
+3. **No stack traces in responses** — Prevents information leakage
+4. **No sensitive data exposed** — Passwords, hashes, tokens never in error messages
+
+---
+
+## Status Codes
+
+### Success Status Codes
+
+| Code | Endpoint | Meaning |
+|------|----------|---------|
+| `200` | Login | Authentication successful, token returned |
+| `200` | Search Selling Materials | Search completed (results may be empty) |
+| `201` | Registration | Company registered successfully |
+| `201` | Create Selling Material | Selling material created successfully |
+| `201` | Create Buying Material | Buying material created successfully |
+
+### Client Error Status Codes
+
+| Code | Endpoint | Meaning |
+|------|----------|---------|
+| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search | Required fields missing or invalid |
+| `401` | Login | Invalid email or password |
+| `401` | Create Selling Material, Create Buying Material | Missing or invalid JWT token |
+| `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
+| `409` | Registration | Email already registered |
+| `409` | Create Buying Material | Buying material for this chemical already exists |
+
+### Server Error Status Codes
+
+| Code | Endpoint | Meaning |
+|------|----------|---------|
+| `500` | Registration, Login | Unexpected server error |
+
+---
+
+## Authentication
+
+### Using JWT Token
+
+For future authenticated endpoints, include the JWT token in the Authorization header:
+
+```http
+Authorization: Bearer <token>
+```
+
+Example:
+
+```bash
+curl -X GET http://localhost:5000/api/protected-endpoint \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Token Expiration
+
+- **Default expiration:** 7 days (configurable via `JWT_EXPIRES_IN`)
+- **When expired:** Token will be rejected with `401 Unauthorized`
+- **Refresh:** Must log in again to get a new token
+
+---
+
+## Data Models
+
+### ManufacturingCompany Document
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "ABC Chemicals Inc.",
+  "location": "Ahmedabad, Gujarat",
+  "address": "123 Industrial Area, Phase 1",
+  "contactNum": "9876543210",
+  "createdAt": "2024-09-12T07:30:00.000Z",
+  "updatedAt": "2024-09-12T07:30:00.000Z"
+}
+```
+
+### CompanyAccount Document
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439012",
+  "email": "company@example.com",
+  "passwordHash": "$2b$10$abcdefghijklmnopqrstuvwxyz...",
+  "manufacturingCompanyId": "507f1f77bcf86cd799439011",
+  "createdAt": "2024-09-12T07:30:00.000Z",
+  "updatedAt": "2024-09-12T07:30:00.000Z"
+}
+```
+
+**Note:** 
+- `passwordHash` is bcrypt hashed and **never returned in API responses**
+- `manufacturingCompanyId` creates a one-to-one relationship with ManufacturingCompany
+- Both models have automatic timestamps
+
+---
+
+## Constraints & Validation
+
+### Registration Constraints
+
+| Field | Constraint | Notes |
+|-------|----------|-------|
+| `name` | Required, String | Trimmed before storage, NOT globally unique |
+| `location` | Required, String | Trimmed before storage |
+| `address` | Required, String | Trimmed before storage |
+| `contactNum` | Required, String | Stored as string, not number |
+| `email` | Required, String, Unique | Normalized (trim + lowercase), unique across all accounts |
+| `password` | Required, String | Min recommended: 8 characters, will be bcrypt hashed |
+
+### Login Constraints
+
+| Field | Constraint | Notes |
+|-------|----------|-------|
+| `email` | Required, String | Will be normalized (trim + lowercase) for lookup |
+| `password` | Required, String | Must match original plaintext that was hashed during registration |
+
+---
+
+## Example Workflows
+
+### Complete Registration & Login Workflow
+
+#### Step 1: Register Company
+
+```bash
+curl -X POST http://localhost:5000/api/manufacturing-companies/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Chemical Corp",
+    "location": "Mumbai, Maharashtra",
+    "address": "456 Business Park",
+    "contactNum": "8765432109",
+    "email": "admin@chemcorp.com",
+    "password": "SecurePass123!"
+  }'
+```
+
+**Response:**
+```json
+{
+  "message": "Company registered successfully",
+  "companyId": "507f1f77bcf86cd799439011"
+}
+```
+
+#### Step 2: Login with Same Credentials
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@chemcorp.com",
+    "password": "SecurePass123!"
+  }'
+```
+
+**Response:**
+```json
+{
+  "message": "Login successful",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "companyId": "507f1f77bcf86cd799439011"
+}
+```
+
+#### Step 3: Use Token for Authenticated Requests
+
+```bash
+curl -X GET http://localhost:5000/api/protected-endpoint \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+---
+
+## Rate Limiting
+
+**Currently:** No rate limiting implemented (planned for future releases)
+
+---
+
+## Versioning
+
+**Current API Version:** 1.0.0
+
+API endpoints use `/api/` prefix. Future versions may use `/api/v2/` etc.
+
+---
+
+## Support
+
+For issues or questions:
+
+1. Check `logs/combined.log` for detailed request/response information
+2. Check `logs/error.log` for error details
+3. Verify `.env` configuration (MONGODB_URI, JWT_SECRET)
+4. Ensure MongoDB is running and accessible
+
+---
+
+## Changelog
+
+### Version 1.3.0 (Current)
+
+- ✅ Natural-language search API (buyer-side)
+- ✅ LLM CAS extraction (gpt-oss-120b via Ollama Cloud)
+- ✅ Query embedding generation (embeddinggemma:300m)
+- ✅ Pinecone vector search with CAS metadata filter
+- ✅ MongoDB result retrieval and ranking preservation
+- ✅ Stale vector handling (skip unmatched results)
+
+### Version 1.2.0
+
+- ✅ Create buying material request (authenticated)
+- ✅ Duplicate prevention (one buying material per company/chemical)
+- ✅ Database-level unique compound index
+- ✅ Optional flexible data field
+- ✅ CAS number resolution for buying materials
+
+### Version 1.1.0
+
+- ✅ Create selling material listing (authenticated)
+- ✅ Seller embedding generation and Pinecone indexing
+- ✅ CAS number resolution (existing vs. new chemicals)
+- ✅ JWT authentication middleware
+- ✅ Race condition handling for concurrent CAS creation
+- ✅ Flexible data field for chemical-specific attributes
+
+### Version 1.0.0
+
+- ✅ Manufacturing company registration
+- ✅ Company login with JWT
+- ✅ Health check endpoint
+- ✅ Winston logging
+- ✅ Error handling
+
+---
+
+*Last Updated: September 12, 2024*
