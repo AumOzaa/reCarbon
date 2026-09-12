@@ -83,65 +83,22 @@ jobs:
       # ─────────────────────────────────────
 
       - name: Configure EC2
-        shell: bash
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USERNAME: ${{ secrets.EC2_USERNAME }}
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           set -e
-
           KEY_FILE="$RUNNER_TEMP/recarbon-ec2"
-
           printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
-
           echo "Testing SSH connection..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=15 \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "echo 'SSH connection successful'"
-
+          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no -o ConnectTimeout=15 "$EC2_USERNAME@$EC2_HOST" "echo 'SSH connection successful'"
           echo "Creating application directory..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "sudo mkdir -p /opt/recarbon"
-
+          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo mkdir -p /opt/recarbon"
           echo "Writing production .env..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "sudo tee /opt/recarbon/.env > /dev/null" <<EOF
-          NODE_ENV=${{ secrets.NODE_ENV }}
-          PORT=${{ secrets.PORT }}
-
-          MONGODB_URI=${{ secrets.MONGODB_URI }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-
-          PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
-          PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}
-
-          OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}
-          OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}
-
-          LLM_MODEL=${{ secrets.LLM_MODEL }}
-          FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}
-          EOF
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "sudo chmod 600 /opt/recarbon/.env && sudo chown root:root /opt/recarbon/.env"
-
+          printf '%s\n' "NODE_ENV=${{ secrets.NODE_ENV }}" "PORT=${{ secrets.PORT }}" "MONGODB_URI=${{ secrets.MONGODB_URI }}" "JWT_SECRET=${{ secrets.JWT_SECRET }}" "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}" "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}" | ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo tee /opt/recarbon/.env > /dev/null"
+          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=no "$EC2_USERNAME@$EC2_HOST" "sudo chmod 600 /opt/recarbon/.env && sudo chown root:root /opt/recarbon/.env"
           echo "EC2 configured."
       
 
