@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors');
 const httpLogger = require('./middleware/httpLogger');
 const manufacturingCompanyRoutes = require('./routes/manufacturingCompany.routes');
 const authRoutes = require('./routes/auth.routes');
@@ -9,6 +10,7 @@ const sellingMaterialSearchRoutes = require('./routes/sellingMaterialSearch.rout
 const app = express();
 
 // Middleware
+app.use(cors()); // Allow all origins
 app.use(express.json());
 app.use(httpLogger);
 
