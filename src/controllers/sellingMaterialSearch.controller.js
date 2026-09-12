@@ -1,6 +1,7 @@
 const logger = require('../config/logger');
 const Chemical = require('../models/Chemical');
 const SellingMaterial = require('../models/SellingMaterial');
+const CompanyAccount = require('../models/CompanyAccount');
 const { extractCasNumber } = require('../services/llm.service');
 const { generateEmbedding } = require('../services/embedding.service');
 const { searchSellingMaterials } = require('../services/pinecone.service');
@@ -161,10 +162,10 @@ const searchSellingMaterialsByQuery = async (req, res) => {
           continue;
         }
 
-        // Fetch from MongoDB
+        // Fetch from MongoDB with company details
         const sellingMaterial = await SellingMaterial.findById(
           sellingMaterialId
-        ).populate('chemicalId');
+        ).populate('chemicalId').populate('manufacturingCompanyId');
 
         if (!sellingMaterial) {
           logger.warn('Stale Pinecone vector - SellingMaterial not found', {
@@ -187,12 +188,25 @@ const searchSellingMaterialsByQuery = async (req, res) => {
           continue;
         }
 
+        // Fetch company email from CompanyAccount
+        let companyEmail = null;
+        try {
+          const companyAccount = await CompanyAccount.findOne({
+            manufacturingCompanyId: sellingMaterial.manufacturingCompanyId._id,
+          }).select('email');
+          companyEmail = companyAccount?.email || null;
+        } catch (accountError) {
+          logger.warn('Error fetching company email', {
+            error: accountError.message,
+            manufacturingCompanyId: sellingMaterial.manufacturingCompanyId._id,
+          });
+        }
+
         results.push({
           score: match.score,
           sellingMaterial: {
             _id: sellingMaterial._id,
-            manufacturingCompanyId: sellingMaterial.manufacturingCompanyId,
-            chemicalId: sellingMaterial.chemicalId._id,
+            manufacturingCompanyId: sellingMaterial.manufacturingCompanyId._id,
             sourceLocation: sellingMaterial.sourceLocation,
             cadence: sellingMaterial.cadence,
             state: sellingMaterial.state,
@@ -205,6 +219,14 @@ const searchSellingMaterialsByQuery = async (req, res) => {
               name: sellingMaterial.chemicalId.name,
               formula: sellingMaterial.chemicalId.formula,
               casNumber: sellingMaterial.chemicalId.casNumber,
+            },
+            company: {
+              _id: sellingMaterial.manufacturingCompanyId._id,
+              name: sellingMaterial.manufacturingCompanyId.name,
+              location: sellingMaterial.manufacturingCompanyId.location,
+              address: sellingMaterial.manufacturingCompanyId.address,
+              contactNum: sellingMaterial.manufacturingCompanyId.contactNum,
+              email: companyEmail,
             },
           },
         });

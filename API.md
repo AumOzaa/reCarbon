@@ -1457,7 +1457,6 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
       "sellingMaterial": {
         "_id": "507f1f77bcf86cd799439016",
         "manufacturingCompanyId": "507f1f77bcf86cd799439011",
-        "chemicalId": "507f1f77bcf86cd799439014",
         "sourceLocation": "Ahmedabad, Gujarat",
         "cadence": "monthly",
         "state": "liquid",
@@ -1474,6 +1473,14 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
           "name": "Hydrochloric Acid",
           "formula": "HCl",
           "casNumber": "7647-01-0"
+        },
+        "company": {
+          "_id": "507f1f77bcf86cd799439011",
+          "name": "ABC Chemicals Inc.",
+          "location": "Ahmedabad, Gujarat",
+          "address": "123 Industrial Area, Phase 1",
+          "contactNum": "9876543210",
+          "email": "company@example.com"
         }
       }
     },
@@ -1482,7 +1489,6 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
       "sellingMaterial": {
         "_id": "507f1f77bcf86cd799439017",
         "manufacturingCompanyId": "507f1f77bcf86cd799439012",
-        "chemicalId": "507f1f77bcf86cd799439014",
         "sourceLocation": "Mumbai, Maharashtra",
         "cadence": "monthly",
         "state": "liquid",
@@ -1499,6 +1505,14 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
           "name": "Hydrochloric Acid",
           "formula": "HCl",
           "casNumber": "7647-01-0"
+        },
+        "company": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "XYZ Pharmaceuticals Ltd.",
+          "location": "Mumbai, Maharashtra",
+          "address": "456 Business Park, Tower B",
+          "contactNum": "9123456789",
+          "email": "sales@xyzpharma.com"
         }
       }
     }
@@ -1515,8 +1529,28 @@ curl -X POST http://localhost:5000/api/search/selling-materials \
 | `topK` | Number | Number of results requested |
 | `results` | Array | Array of matching SellingMaterials |
 | `results[].score` | Number | Pinecone similarity score (0-1, higher is better) |
-| `results[].sellingMaterial` | Object | Full SellingMaterial document |
+| `results[].sellingMaterial` | Object | Full SellingMaterial document with company details |
+| `results[].sellingMaterial._id` | String | MongoDB ObjectId of the SellingMaterial |
+| `results[].sellingMaterial.manufacturingCompanyId` | String | MongoDB ObjectId of the ManufacturingCompany |
+| `results[].sellingMaterial.sourceLocation` | String | Where the chemical is sourced from |
+| `results[].sellingMaterial.cadence` | String | Supply frequency (e.g., "monthly") |
+| `results[].sellingMaterial.state` | String | Physical state of the chemical ("solid", "liquid", "gas") |
+| `results[].sellingMaterial.data` | Object | Flexible attributes (purity, quantity, etc.) |
+| `results[].sellingMaterial.embeddingId` | String | Vector ID in Pinecone |
+| `results[].sellingMaterial.createdAt` | String | ISO timestamp of creation |
+| `results[].sellingMaterial.updatedAt` | String | ISO timestamp of last update |
 | `results[].sellingMaterial.chemical` | Object | Populated Chemical reference (name, formula, CAS) |
+| `results[].sellingMaterial.chemical._id` | String | MongoDB ObjectId of the Chemical |
+| `results[].sellingMaterial.chemical.name` | String | Chemical name |
+| `results[].sellingMaterial.chemical.formula` | String | Chemical formula |
+| `results[].sellingMaterial.chemical.casNumber` | String | CAS Registry Number |
+| `results[].sellingMaterial.company` | Object | Full ManufacturingCompany details (flattened) |
+| `results[].sellingMaterial.company._id` | String | MongoDB ObjectId of the ManufacturingCompany |
+| `results[].sellingMaterial.company.name` | String | Company name |
+| `results[].sellingMaterial.company.location` | String | City/Region where company is located |
+| `results[].sellingMaterial.company.address` | String | Physical address of the company |
+| `results[].sellingMaterial.company.contactNum` | String | Company phone number |
+| `results[].sellingMaterial.company.email` | String | Company email address |
 
 ### Empty Results Response
 
