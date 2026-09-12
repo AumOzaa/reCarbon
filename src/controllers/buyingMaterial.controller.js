@@ -201,6 +201,107 @@ const createBuyingMaterial = async (req, res) => {
   }
 };
 
+/**
+ * Delete a buying material request
+ * DELETE /api/buying-materials/:id
+ *
+ * Authorized company may only delete its own buying materials.
+ */
+const deleteBuyingMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const manufacturingCompanyId = req.user.manufacturingCompanyId;
+
+    logger.info('Buying material deletion attempt', {
+      buyingMaterialId: id,
+      manufacturingCompanyId,
+    });
+
+    // Validate MongoDB ID format
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+    if (!isValidObjectId) {
+      logger.warn('Buying material deletion - invalid ID format', {
+        providedId: id,
+        manufacturingCompanyId,
+      });
+      return res.status(400).json({
+        message: 'Invalid buying material ID',
+      });
+    }
+
+    // Find the BuyingMaterial (with ownership check)
+    const buyingMaterial = await BuyingMaterial.findOne({
+      _id: id,
+      manufacturingCompanyId,
+    });
+
+    if (!buyingMaterial) {
+      logger.warn('Buying material deletion - not found for authenticated company', {
+        buyingMaterialId: id,
+        manufacturingCompanyId,
+      });
+      return res.status(404).json({
+        message: 'Buying material not found',
+      });
+    }
+
+    logger.info('Buying material found', {
+      buyingMaterialId: buyingMaterial._id,
+      manufacturingCompanyId,
+    });
+
+    // ========== MONGODB DELETION ==========
+
+    try {
+      const deleteResult = await BuyingMaterial.deleteOne({
+        _id: buyingMaterial._id,
+        manufacturingCompanyId,
+      });
+
+      if (deleteResult.deletedCount === 0) {
+        logger.error('MongoDB deletion reported 0 records deleted', {
+          buyingMaterialId: buyingMaterial._id,
+          manufacturingCompanyId,
+        });
+
+        return res.status(500).json({
+          message: 'An error occurred while deleting the buying material',
+        });
+      }
+
+      logger.info('Buying material deleted successfully', {
+        buyingMaterialId: buyingMaterial._id,
+        manufacturingCompanyId,
+      });
+
+      return res.status(200).json({
+        message: 'Buying material deleted successfully',
+        buyingMaterialId: buyingMaterial._id,
+      });
+    } catch (mongoError) {
+      logger.error('MongoDB deletion failed', {
+        error: mongoError.message,
+        buyingMaterialId: buyingMaterial._id,
+      });
+
+      return res.status(500).json({
+        message: 'An error occurred while deleting the buying material',
+      });
+    }
+  } catch (error) {
+    logger.error('Buying material deletion failed', {
+      error: error.message,
+      buyingMaterialId: req.params?.id,
+      manufacturingCompanyId: req.user?.manufacturingCompanyId,
+    });
+
+    return res.status(500).json({
+      message: 'An error occurred while deleting the buying material',
+    });
+  }
+};
+
 module.exports = {
   createBuyingMaterial,
+  deleteBuyingMaterial,
 };
