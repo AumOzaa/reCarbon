@@ -6,7 +6,7 @@ on:
       - master
 
 env:
-  IMAGE_NAME: aumozaa/recarbon-backend
+  IMAGE_NAME: prathamalwayscomeslast/recarbon-backend
 
 jobs:
   build-and-deploy:
