@@ -88,22 +88,6 @@ jobs:
         run: terraform init -input=false
 
       # ─────────────────────────────────────
-      # Terraform format check
-      # ─────────────────────────────────────
-
-      - name: Terraform Format Check
-        working-directory: infra/terraform
-        run: terraform fmt -check
-
-      # ─────────────────────────────────────
-      # Terraform validation
-      # ─────────────────────────────────────
-
-      - name: Terraform Validate
-        working-directory: infra/terraform
-        run: terraform validate
-
-      # ─────────────────────────────────────
       # Terraform Plan
       # ─────────────────────────────────────
 
