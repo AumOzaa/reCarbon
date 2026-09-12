@@ -12,9 +12,10 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 4. [Create Selling Material](#create-selling-material)
 5. [Delete Selling Material](#delete-selling-material)
 6. [Create Buying Material](#create-buying-material)
-7. [Search Selling Materials](#search-selling-materials)
-8. [Error Responses](#error-responses)
-9. [Status Codes](#status-codes)
+7. [Delete Buying Material](#delete-buying-material)
+8. [Search Selling Materials](#search-selling-materials)
+9. [Error Responses](#error-responses)
+10. [Status Codes](#status-codes)
 
 ---
 
@@ -1231,6 +1232,167 @@ To create a new buying request for the same chemical, the existing one must be d
 
 ---
 
+## Delete Buying Material
+
+Delete a buying material request owned by the authenticated manufacturing company.
+
+This endpoint removes a BuyingMaterial record from MongoDB.
+
+### Endpoint
+
+```http
+DELETE /api/buying-materials/:id
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The authenticated company may only delete its own buying materials. The system verifies ownership using the `manufacturingCompanyId` from the JWT.
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### URL Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | String | MongoDB ObjectId of the BuyingMaterial to delete |
+
+### Request Example
+
+```bash
+curl -X DELETE http://localhost:5000/api/buying-materials/507f1f77bcf86cd799439013 \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "Buying material deleted successfully",
+  "buyingMaterialId": "507f1f77bcf86cd799439013"
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `buyingMaterialId` | String | MongoDB ObjectId of the deleted BuyingMaterial |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT token signature is invalid
+
+#### Invalid Buying Material ID Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid buying material ID"
+}
+```
+
+**Triggers when:**
+- The `id` parameter is not a valid MongoDB ObjectId (24 hex characters)
+
+#### Buying Material Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Buying material not found"
+}
+```
+
+**Triggers when:**
+- The BuyingMaterial with the given ID does not exist
+- The BuyingMaterial belongs to a different company (ownership check)
+
+**Note:** This response is identical for both "not found" and "wrong company" cases to prevent leaking information about other companies' records.
+
+#### MongoDB Deletion Failure
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred while deleting the buying material"
+}
+```
+
+**Triggers when:**
+- MongoDB deletion fails
+- Database connection issues occur during deletion
+
+### Deletion Flow
+
+The deletion process follows this sequence:
+
+1. **Validate the ID** — Check that it's a valid MongoDB ObjectId
+2. **Find the Record** — Query MongoDB for the BuyingMaterial with both ID and company ownership check
+3. **Delete from MongoDB** — Remove the BuyingMaterial document from the database
+
+**Key Design Decisions:**
+
+- **Ownership Verification:** The request must include a valid JWT. The authenticated company ID is extracted and used to verify that the BuyingMaterial belongs to that company.
+- **No Information Leakage:** The API does not distinguish between "not found" and "wrong company" — both return 404. This prevents attackers from enumerating BuyingMaterial IDs that belong to other companies.
+- **Logging Included:** Deletion operations are fully logged with relevant IDs (`buyingMaterialId`, `manufacturingCompanyId`) for audit trails and troubleshooting.
+
+### Important Notes
+
+1. **Ownership Verification:** The request must include a valid JWT. The authenticated company ID is extracted and used to verify that the BuyingMaterial belongs to that company.
+
+2. **No Vector Cleanup:** Unlike SellingMaterial deletion, BuyingMaterial deletion does not involve Pinecone or vector cleanup (BuyingMaterials are not indexed).
+
+3. **Duplicate Prevention Reset:** After deleting a buying material request, the company can create a new buying material request for the same chemical.
+
+4. **No Information Leakage:** The API does not distinguish between "not found" and "wrong company" — both return 404.
+
+5. **Logging Included:** Deletion operations are fully logged with relevant IDs for audit trails and troubleshooting.
+
+---
+
 ## Search Selling Materials
 
 Search for selling material listings using natural language query with automatic CAS number extraction.
@@ -1574,6 +1736,7 @@ All error responses follow this format:
 | `200` | Login | Authentication successful, token returned |
 | `200` | Search Selling Materials | Search completed (results may be empty) |
 | `200` | Delete Selling Material | Selling material deleted successfully |
+| `200` | Delete Buying Material | Buying material deleted successfully |
 | `201` | Registration | Company registered successfully |
 | `201` | Create Selling Material | Selling material created successfully |
 | `201` | Create Buying Material | Buying material created successfully |
@@ -1582,11 +1745,12 @@ All error responses follow this format:
 
 | Code | Endpoint | Meaning |
 |------|----------|---------|
-| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material | Required fields missing or invalid (or invalid ID format for delete) |
+| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material | Required fields missing or invalid (or invalid ID format for delete) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material, Delete Selling Material | Missing or invalid JWT token |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
 | `404` | Delete Selling Material | Selling material not found or belongs to different company |
+| `404` | Delete Buying Material | Buying material not found or belongs to different company |
 | `409` | Registration | Email already registered |
 | `409` | Create Buying Material | Buying material for this chemical already exists |
 
@@ -1596,6 +1760,7 @@ All error responses follow this format:
 |------|----------|---------|
 | `500` | Registration, Login | Unexpected server error |
 | `500` | Delete Selling Material | Pinecone or MongoDB deletion failure |
+| `500` | Delete Buying Material | MongoDB deletion failure |
 
 ---
 
