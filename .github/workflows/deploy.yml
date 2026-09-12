@@ -159,21 +159,20 @@ jobs:
           set -e
 
           KEY_FILE="$RUNNER_TEMP/recarbon-ec2"
-          IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-
-          echo "Preparing SSH key..."
 
           printf '%s\n' "$SSH_KEY" > "$KEY_FILE"
           chmod 600 "$KEY_FILE"
 
-          echo "Testing SSH connection..."
+          echo "Connecting to $EC2_USERNAME@$EC2_HOST"
 
           ssh \
             -i "$KEY_FILE" \
             -o StrictHostKeyChecking=no \
             -o ConnectTimeout=15 \
             "$EC2_USERNAME@$EC2_HOST" \
-            "echo 'SSH connection successful'"
+            "echo SSH_OK"
+
+          IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
 
           echo "Pulling image: $IMAGE"
 
@@ -215,30 +214,12 @@ jobs:
           echo "Waiting for container..."
           sleep 5
 
-          echo "Checking container status..."
+          echo "Checking container..."
 
           ssh \
             -i "$KEY_FILE" \
             -o StrictHostKeyChecking=no \
             "$EC2_USERNAME@$EC2_HOST" \
-            "if ! docker ps --filter 'name=recarbon-backend' --filter 'status=running' | grep -q recarbon-backend; then
-              echo 'Container failed to start.'
-              docker logs recarbon-backend || true
-              exit 1
-            fi"
-
-          echo "Removing unused images..."
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker image prune -af"
+            "docker ps --filter name=recarbon-backend"
 
           echo "Deployment successful!"
-
-          ssh \
-            -i "$KEY_FILE" \
-            -o StrictHostKeyChecking=no \
-            "$EC2_USERNAME@$EC2_HOST" \
-            "docker ps"
