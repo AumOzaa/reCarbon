@@ -42,10 +42,6 @@ resource "aws_eip" "backend" {
   tags = {
     Name = "recarbon-backend-eip"
   }
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
 resource "aws_eip_association" "backend" {
