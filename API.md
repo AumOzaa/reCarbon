@@ -8,14 +8,15 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 
 1. [Health Check](#health-check)
 2. [Manufacturing Company Registration](#manufacturing-company-registration)
-3. [Login](#login)
-4. [Create Selling Material](#create-selling-material)
-5. [Delete Selling Material](#delete-selling-material)
-6. [Create Buying Material](#create-buying-material)
-7. [Delete Buying Material](#delete-buying-material)
-8. [Search Selling Materials](#search-selling-materials)
-9. [Error Responses](#error-responses)
-10. [Status Codes](#status-codes)
+3. [Company Profile](#company-profile)
+4. [Login](#login)
+5. [Create Selling Material](#create-selling-material)
+6. [Delete Selling Material](#delete-selling-material)
+7. [Create Buying Material](#create-buying-material)
+8. [Delete Buying Material](#delete-buying-material)
+9. [Search Selling Materials](#search-selling-materials)
+10. [Error Responses](#error-responses)
+11. [Status Codes](#status-codes)
 
 ---
 
@@ -197,6 +198,180 @@ curl -X POST http://localhost:5000/api/manufacturing-companies/register \
    ↓
 8. Return 201 with companyId
 ```
+
+---
+
+## Company Profile
+
+Retrieve the authenticated company's complete profile including all company details and listings.
+
+This endpoint returns the authenticated company's information (name, location, address, contact), email, and all selling/buying materials with their chemical details.
+
+### Endpoint
+
+```http
+GET /api/manufacturing-companies/me
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The JWT token is obtained from the [Login](#login) endpoint and contains:
+- `accountId` — Company account ID
+- `manufacturingCompanyId` — Company ID (used to fetch this company's data)
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### Request Example
+
+```bash
+curl -X GET http://localhost:5000/api/manufacturing-companies/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "ABC Chemicals Inc.",
+  "location": "Ahmedabad, Gujarat",
+  "address": "123 Industrial Area, Phase 1",
+  "contactNum": "9876543210",
+  "email": "company@example.com",
+  "createdAt": "2024-09-12T08:00:00.000Z",
+  "updatedAt": "2024-09-12T08:00:00.000Z",
+  "sellingMaterials": [
+    {
+      "_id": "507f1f77bcf86cd799439016",
+      "sourceLocation": "Ahmedabad, Gujarat",
+      "cadence": "monthly",
+      "state": "liquid",
+      "data": {
+        "purity": 99,
+        "quantity": 20,
+        "unit": "tonnes"
+      },
+      "embeddingId": "sellingMaterial:507f1f77bcf86cd799439016",
+      "createdAt": "2024-09-12T10:35:00.000Z",
+      "updatedAt": "2024-09-12T10:35:00.000Z",
+      "chemical": {
+        "_id": "507f1f77bcf86cd799439014",
+        "name": "Hydrochloric Acid",
+        "formula": "HCl",
+        "casNumber": "7647-01-0",
+        "createdAt": "2024-09-12T09:00:00.000Z",
+        "updatedAt": "2024-09-12T09:00:00.000Z"
+      }
+    }
+  ],
+  "buyingMaterials": [
+    {
+      "_id": "507f1f77bcf86cd799439020",
+      "reqLocation": "Ahmedabad, Gujarat",
+      "data": {
+        "minPurity": 98,
+        "maxPrice": 500
+      },
+      "createdAt": "2024-09-12T11:00:00.000Z",
+      "updatedAt": "2024-09-12T11:00:00.000Z",
+      "chemical": {
+        "_id": "507f1f77bcf86cd799439014",
+        "name": "Hydrochloric Acid",
+        "formula": "HCl",
+        "casNumber": "7647-01-0",
+        "createdAt": "2024-09-12T09:00:00.000Z",
+        "updatedAt": "2024-09-12T09:00:00.000Z"
+      }
+    }
+  ]
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `_id` | String | MongoDB ObjectId of the ManufacturingCompany |
+| `name` | String | Company name |
+| `location` | String | City/Region where company is located |
+| `address` | String | Physical address of the company |
+| `contactNum` | String | Company phone number |
+| `email` | String | Company email address |
+| `createdAt` | String | ISO timestamp when company was created |
+| `updatedAt` | String | ISO timestamp of last update |
+| `sellingMaterials` | Array | All SellingMaterial listings created by this company |
+| `sellingMaterials[].` | Object | Full SellingMaterial with all fields and chemical details |
+| `buyingMaterials` | Array | All BuyingMaterial requests created by this company |
+| `buyingMaterials[].` | Object | Full BuyingMaterial with all fields and chemical details |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT token signature is invalid
+
+#### Company Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Company not found"
+}
+```
+
+**Triggers when:**
+- The company referenced in the JWT token does not exist in the database
+- This is rare and typically indicates data inconsistency
+
+### Important Notes
+
+1. **Complete Profile:** This endpoint returns everything except the password hash. It includes all company details plus all selling and buying materials.
+
+2. **No Pagination:** All listings are returned without pagination. If the company has many listings, all will be included.
+
+3. **Chemical Details Included:** Each selling/buying material includes full chemical information (name, formula, CAS number) populated from the Chemical collection.
+
+4. **Timestamps:** All objects include creation and update timestamps for audit trails.
+
+5. **Flattened Structure:** All company details and listings are in a single flattened response (no nested company/account separation).
 
 ---
 
@@ -1768,6 +1943,7 @@ All error responses follow this format:
 | Code | Endpoint | Meaning |
 |------|----------|---------|
 | `200` | Login | Authentication successful, token returned |
+| `200` | Company Profile | Profile retrieved successfully |
 | `200` | Search Selling Materials | Search completed (results may be empty) |
 | `200` | Delete Selling Material | Selling material deleted successfully |
 | `200` | Delete Buying Material | Buying material deleted successfully |
@@ -1781,10 +1957,11 @@ All error responses follow this format:
 |------|----------|---------|
 | `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material, Delete Buying Material | Required fields missing or invalid (or invalid ID format for delete) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material | Missing or invalid JWT token |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material, Delete Buying Material, Company Profile | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
 | `404` | Delete Selling Material | Selling material not found or belongs to different company |
 | `404` | Delete Buying Material | Buying material not found or belongs to different company |
+| `404` | Company Profile | Company not found in database |
 | `409` | Registration | Email already registered |
 | `409` | Create Buying Material | Buying material for this chemical already exists |
 
