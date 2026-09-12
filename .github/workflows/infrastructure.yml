@@ -117,7 +117,6 @@ jobs:
       # ─────────────────────────────────────
       # Cleanup
       # ─────────────────────────────────────
-
       - name: Remove generated tfvars
         if: always()
         working-directory: infra/terraform
@@ -141,16 +140,16 @@ jobs:
           
           API_URL="http://${EC2_IP}:3000"
           
-          echo "Updating NEXT_PUBLIC_API_URL to ${API_URL}"
+          echo "Setting NEXT_PUBLIC_API_URL=${API_URL}"
           
           ENV_ID=$(curl -sS \
             -H "Authorization: Bearer ${VERCEL_TOKEN}" \
             "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env?teamId=${VERCEL_ORG_ID}" \
-            | jq -r '.envs[] | select(.key=="NEXT_PUBLIC_API_URL" and .target[]=="production") | .id' \
+            | jq -r '.envs[] | select(.key=="NEXT_PUBLIC_API_URL" and (.target | index("production"))) | .id' \
             | head -n 1)
           
           if [ -n "$ENV_ID" ] && [ "$ENV_ID" != "null" ]; then
-            echo "Existing Vercel environment variable found. Updating it."
+            echo "Updating existing environment variable..."
           
             curl -sS -X PATCH \
               -H "Authorization: Bearer ${VERCEL_TOKEN}" \
@@ -158,7 +157,7 @@ jobs:
               "https://api.vercel.com/v9/projects/${VERCEL_PROJECT_ID}/env/${ENV_ID}?teamId=${VERCEL_ORG_ID}" \
               -d "{\"value\":\"${API_URL}\",\"target\":[\"production\"]}"
           else
-            echo "NEXT_PUBLIC_API_URL does not exist. Creating it."
+            echo "Creating environment variable..."
           
             curl -sS -X POST \
               -H "Authorization: Bearer ${VERCEL_TOKEN}" \
@@ -167,11 +166,28 @@ jobs:
               -d "{\"key\":\"NEXT_PUBLIC_API_URL\",\"value\":\"${API_URL}\",\"type\":\"plain\",\"target\":[\"production\"]}"
           fi
 
-      - name: Redeploy Vercel Frontend
+      - name: Redeploy Existing Vercel Project
         if: inputs.action == 'apply'
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          npx vercel@latest deploy --prod --yes --token "$VERCEL_TOKEN"
+          set -e
+          
+          RESPONSE=$(curl -sS -X POST \
+            -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+            -H "Content-Type: application/json" \
+            "https://api.vercel.com/v6/deployments?projectId=${VERCEL_PROJECT_ID}&teamId=${VERCEL_ORG_ID}&forceNew=1" \
+            -d "{\"name\":\"hackout26-frontend\",\"target\":\"production\"}")
+          
+          echo "$RESPONSE"
+          
+          DEPLOYMENT_URL=$(echo "$RESPONSE" | jq -r '.url // empty')
+          
+          if [ -z "$DEPLOYMENT_URL" ]; then
+            echo "Failed to create Vercel deployment."
+            exit 1
+          fi
+          
+          echo "Vercel deployment started: https://${DEPLOYMENT_URL}"
