@@ -105,17 +105,23 @@ const upsertSellingMaterialVector = async (sellingMaterialId, embedding, metadat
 /**
  * Delete a selling material vector from Pinecone
  * @param {string} sellingMaterialId - MongoDB SellingMaterial ID
- * @throws {Error} - If deletion fails
+ * @param {string} embeddingId - Optional stored embedding ID (if null, uses deterministic ID)
+ * @throws {Error} - If deletion fails (except vector not found)
  */
-const deleteSellingMaterialVector = async (sellingMaterialId) => {
+const deleteSellingMaterialVector = async (sellingMaterialId, embeddingId) => {
   try {
     if (!indexReady) {
       throw new Error('Pinecone index not ready');
     }
 
-    const vectorId = `sellingMaterial:${sellingMaterialId}`;
+    // Use stored embeddingId if available, otherwise fall back to deterministic ID
+    const vectorId = embeddingId || `sellingMaterial:${sellingMaterialId}`;
 
-    logger.debug('Pinecone deletion started', { vectorId });
+    logger.debug('Pinecone deletion started', {
+      vectorId,
+      embeddingId: embeddingId || 'using deterministic ID',
+      sellingMaterialId,
+    });
 
     const index = pineconeClient.Index(PINECONE_INDEX_NAME);
 
@@ -123,12 +129,29 @@ const deleteSellingMaterialVector = async (sellingMaterialId) => {
 
     logger.info('Pinecone deletion completed', {
       vectorId,
+      sellingMaterialId,
       indexName: PINECONE_INDEX_NAME,
     });
   } catch (error) {
+    // Check if this is a "not found" error (idempotent)
+    const notFoundPatterns = ['not found', 'does not exist', '404'];
+    const isNotFound = notFoundPatterns.some((pattern) =>
+      error.message?.toLowerCase().includes(pattern)
+    );
+
+    if (isNotFound) {
+      logger.info('Pinecone vector already absent', {
+        sellingMaterialId,
+        embeddingId: embeddingId || 'deterministic ID',
+      });
+      // Don't throw - treat as success (idempotent)
+      return;
+    }
+
     logger.error('Pinecone deletion failed', {
       error: error.message,
       sellingMaterialId,
+      embeddingId: embeddingId || 'deterministic ID',
     });
     throw error;
   }

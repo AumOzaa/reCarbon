@@ -10,10 +10,11 @@ Complete API reference for the ReCarbon B2B Chemical Marketplace.
 2. [Manufacturing Company Registration](#manufacturing-company-registration)
 3. [Login](#login)
 4. [Create Selling Material](#create-selling-material)
-5. [Create Buying Material](#create-buying-material)
-6. [Search Selling Materials](#search-selling-materials)
-7. [Error Responses](#error-responses)
-8. [Status Codes](#status-codes)
+5. [Delete Selling Material](#delete-selling-material)
+6. [Create Buying Material](#create-buying-material)
+7. [Search Selling Materials](#search-selling-materials)
+8. [Error Responses](#error-responses)
+9. [Status Codes](#status-codes)
 
 ---
 
@@ -724,6 +725,183 @@ Each API call creates a separate SellingMaterial record.
 
 ---
 
+## Delete Selling Material
+
+Delete a selling material listing owned by the authenticated manufacturing company.
+
+This endpoint removes a SellingMaterial record from MongoDB and its corresponding vector from Pinecone.
+
+### Endpoint
+
+```http
+DELETE /api/selling-materials/:id
+```
+
+### Authentication
+
+**Required:** Yes (JWT Bearer Token)
+
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+The authenticated company may only delete its own selling materials. The system verifies ownership using the `manufacturingCompanyId` from the JWT.
+
+### Request Headers
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### URL Parameters
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | String | MongoDB ObjectId of the SellingMaterial to delete |
+
+### Request Example
+
+```bash
+curl -X DELETE http://localhost:5000/api/selling-materials/507f1f77bcf86cd799439013 \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Success Response
+
+**Status Code:** `200 OK`
+
+```json
+{
+  "message": "Selling material deleted successfully",
+  "sellingMaterialId": "507f1f77bcf86cd799439013"
+}
+```
+
+#### Response Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | Success message |
+| `sellingMaterialId` | String | MongoDB ObjectId of the deleted SellingMaterial |
+
+### Error Responses
+
+#### Missing Authentication
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Authorization header is required"
+}
+```
+
+**Triggers when:**
+- `Authorization` header is missing
+- No Bearer token is provided
+
+#### Invalid Token
+
+**Status Code:** `401 Unauthorized`
+
+```json
+{
+  "message": "Invalid or expired token"
+}
+```
+
+**Triggers when:**
+- JWT token is malformed
+- JWT token has expired
+- JWT token signature is invalid
+
+#### Invalid Selling Material ID Format
+
+**Status Code:** `400 Bad Request`
+
+```json
+{
+  "message": "Invalid selling material ID"
+}
+```
+
+**Triggers when:**
+- The `id` parameter is not a valid MongoDB ObjectId (24 hex characters)
+
+#### Selling Material Not Found
+
+**Status Code:** `404 Not Found`
+
+```json
+{
+  "message": "Selling material not found"
+}
+```
+
+**Triggers when:**
+- The SellingMaterial with the given ID does not exist
+- The SellingMaterial belongs to a different company (ownership check)
+
+**Note:** This response is identical for both "not found" and "wrong company" cases to prevent leaking information about other companies' records.
+
+#### Pinecone Deletion Failure
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred while deleting the selling material"
+}
+```
+
+**Triggers when:**
+- Pinecone vector deletion fails (network error, API unavailable, etc.)
+
+**Important:** When Pinecone deletion fails, the MongoDB record is NOT deleted. This ensures data consistency — the SellingMaterial record remains and the request can be retried. The vector will be cleaned up on the next successful deletion attempt.
+
+#### MongoDB Deletion Failure
+
+**Status Code:** `500 Internal Server Error`
+
+```json
+{
+  "message": "An error occurred while deleting the selling material"
+}
+```
+
+**Triggers when:**
+- MongoDB deletion fails after Pinecone deletion succeeds
+- Database connection issues occur during deletion
+
+### Deletion Flow
+
+The deletion process follows this sequence to ensure data consistency:
+
+1. **Validate the ID** — Check that it's a valid MongoDB ObjectId
+2. **Find the Record** — Query MongoDB for the SellingMaterial with both ID and company ownership check
+3. **Delete from Pinecone** — Delete the vector using the stored `embeddingId` (or fallback to deterministic ID)
+4. **Delete from MongoDB** — Remove the SellingMaterial document from the database
+
+**Key Design Decisions:**
+
+- **Pinecone deletion happens BEFORE MongoDB deletion** — If Pinecone deletion fails, the MongoDB record is preserved. If MongoDB deletion fails, the vector is already gone but the record remains. Either way, the request can be retried.
+- **Vector already gone is idempotent** — If the vector doesn't exist in Pinecone, deletion succeeds and continues to MongoDB deletion. This handles cases where vectors were manually deleted or already cleaned up.
+- **Deterministic ID fallback** — If the `embeddingId` field is not set (e.g., from older records), the system uses the deterministic vector ID: `sellingMaterial:<SellingMaterial._id>`
+
+### Important Notes
+
+1. **Ownership Verification:** The request must include a valid JWT. The authenticated company ID is extracted and used to verify that the SellingMaterial belongs to that company.
+
+2. **Idempotent Vector Deletion:** If the Pinecone vector is already missing (either previously deleted or manually removed), the deletion still succeeds. This prevents cascading failures.
+
+3. **Atomic Deletion is Not Used:** MongoDB transactions are not used. Instead, the order of operations (Pinecone first, then MongoDB) ensures that the authoritative MongoDB record survives any partial failure.
+
+4. **No Information Leakage:** The API does not distinguish between "not found" and "wrong company" — both return 404. This prevents attackers from enumerating SellingMaterial IDs that belong to other companies.
+
+5. **Logging Included:** Deletion operations are fully logged with relevant IDs (`sellingMaterialId`, `embeddingId`, `manufacturingCompanyId`) for audit trails and troubleshooting.
+
+---
+
 ## Create Buying Material
 
 Create a buying material request for an authenticated manufacturing company.
@@ -1395,6 +1573,7 @@ All error responses follow this format:
 |------|----------|---------|
 | `200` | Login | Authentication successful, token returned |
 | `200` | Search Selling Materials | Search completed (results may be empty) |
+| `200` | Delete Selling Material | Selling material deleted successfully |
 | `201` | Registration | Company registered successfully |
 | `201` | Create Selling Material | Selling material created successfully |
 | `201` | Create Buying Material | Buying material created successfully |
@@ -1403,10 +1582,11 @@ All error responses follow this format:
 
 | Code | Endpoint | Meaning |
 |------|----------|---------|
-| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search | Required fields missing or invalid |
+| `400` | Registration, Login, Create Selling Material, Create Buying Material, Search, Delete Selling Material | Required fields missing or invalid (or invalid ID format for delete) |
 | `401` | Login | Invalid email or password |
-| `401` | Create Selling Material, Create Buying Material | Missing or invalid JWT token |
+| `401` | Create Selling Material, Create Buying Material, Delete Selling Material | Missing or invalid JWT token |
 | `404` | Search Selling Materials | Chemical with CAS number not found in marketplace |
+| `404` | Delete Selling Material | Selling material not found or belongs to different company |
 | `409` | Registration | Email already registered |
 | `409` | Create Buying Material | Buying material for this chemical already exists |
 
@@ -1415,6 +1595,7 @@ All error responses follow this format:
 | Code | Endpoint | Meaning |
 |------|----------|---------|
 | `500` | Registration, Login | Unexpected server error |
+| `500` | Delete Selling Material | Pinecone or MongoDB deletion failure |
 
 ---
 

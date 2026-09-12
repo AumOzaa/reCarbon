@@ -311,6 +311,138 @@ const createSellingMaterial = async (req, res) => {
   }
 };
 
+/**
+ * Delete a selling material listing
+ * DELETE /api/selling-materials/:id
+ *
+ * Authorized company may only delete its own selling materials.
+ * Deletes from Pinecone first, then MongoDB (to avoid orphaned vectors).
+ */
+const deleteSellingMaterial = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const manufacturingCompanyId = req.user.manufacturingCompanyId;
+
+    logger.info('Selling material deletion attempt', {
+      sellingMaterialId: id,
+      manufacturingCompanyId,
+    });
+
+    // Validate MongoDB ID format
+    const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(id);
+    if (!isValidObjectId) {
+      logger.warn('Selling material deletion - invalid ID format', {
+        providedId: id,
+        manufacturingCompanyId,
+      });
+      return res.status(400).json({
+        message: 'Invalid selling material ID',
+      });
+    }
+
+    // Find the SellingMaterial (with ownership check)
+    const sellingMaterial = await SellingMaterial.findOne({
+      _id: id,
+      manufacturingCompanyId,
+    });
+
+    if (!sellingMaterial) {
+      logger.warn('Selling material deletion - not found for authenticated company', {
+        sellingMaterialId: id,
+        manufacturingCompanyId,
+      });
+      return res.status(404).json({
+        message: 'Selling material not found',
+      });
+    }
+
+    logger.info('Selling material found', {
+      sellingMaterialId: sellingMaterial._id,
+      embeddingId: sellingMaterial.embeddingId || 'not set',
+      manufacturingCompanyId,
+    });
+
+    // ========== PINECONE DELETION (BEFORE MongoDB) ==========
+
+    try {
+      if (!sellingMaterial.embeddingId) {
+        logger.warn('Selling material - embeddingId not set, will use deterministic ID', {
+          sellingMaterialId: sellingMaterial._id,
+        });
+      }
+
+      logger.info('Attempting Pinecone vector deletion');
+      await deleteSellingMaterialVector(sellingMaterial._id, sellingMaterial.embeddingId);
+
+      logger.info('Pinecone vector deleted successfully', {
+        sellingMaterialId: sellingMaterial._id,
+        embeddingId: sellingMaterial.embeddingId || 'deterministic ID',
+      });
+    } catch (pineconeError) {
+      // Pinecone failure is fatal - do NOT delete MongoDB record
+      logger.error('Pinecone deletion failed, aborting MongoDB deletion', {
+        error: pineconeError.message,
+        sellingMaterialId: sellingMaterial._id,
+        embeddingId: sellingMaterial.embeddingId,
+      });
+
+      return res.status(500).json({
+        message: 'An error occurred while deleting the selling material',
+      });
+    }
+
+    // ========== MONGODB DELETION (AFTER Pinecone) ==========
+
+    try {
+      const deleteResult = await SellingMaterial.deleteOne({
+        _id: sellingMaterial._id,
+        manufacturingCompanyId,
+      });
+
+      if (deleteResult.deletedCount === 0) {
+        logger.error('MongoDB deletion reported 0 records deleted', {
+          sellingMaterialId: sellingMaterial._id,
+          manufacturingCompanyId,
+        });
+
+        return res.status(500).json({
+          message: 'An error occurred while deleting the selling material',
+        });
+      }
+
+      logger.info('Selling material deleted successfully', {
+        sellingMaterialId: sellingMaterial._id,
+        manufacturingCompanyId,
+      });
+
+      return res.status(200).json({
+        message: 'Selling material deleted successfully',
+        sellingMaterialId: sellingMaterial._id,
+      });
+    } catch (mongoError) {
+      logger.error('MongoDB deletion failed', {
+        error: mongoError.message,
+        sellingMaterialId: sellingMaterial._id,
+      });
+
+      return res.status(500).json({
+        message: 'An error occurred while deleting the selling material',
+      });
+    }
+  } catch (error) {
+    logger.error('Selling material deletion failed', {
+      error: error.message,
+      sellingMaterialId: req.params?.id,
+      manufacturingCompanyId: req.user?.manufacturingCompanyId,
+    });
+
+    return res.status(500).json({
+      message: 'An error occurred while deleting the selling material',
+    });
+  }
+};
+
 module.exports = {
   createSellingMaterial,
+  deleteSellingMaterial,
 };
