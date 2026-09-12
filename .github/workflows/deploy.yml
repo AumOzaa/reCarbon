@@ -6,7 +6,6 @@ on:
       - master
   workflow_dispatch:
 
-
 env:
   IMAGE_NAME: prathamalwayscomeslast/recarbon-backend
 
@@ -52,35 +51,17 @@ jobs:
         with:
           context: .
           push: true
-
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # prepare ssh key
-      - name: Prepare SSH key
-        shell: bash
-        env:
-          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-        run: |
-          set -e
-
-          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/recarbon-ec2"
-
-          chmod 600 "$RUNNER_TEMP/recarbon-ec2"
-
-          ssh-keygen -lf <(
-            ssh-keygen -y -f "$RUNNER_TEMP/recarbon-ec2"
-          ) -E sha256
-
-          echo "SSH key prepared."
 
       # ─────────────────────────────────────
-      # 5. Wait for EC2 + create .env
+      # 5. Configure AWS credentials
       # ─────────────────────────────────────
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -88,24 +69,39 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-south-1
 
+
+      # ─────────────────────────────────────
+      # 6. Get EC2 instance ID
+      # ─────────────────────────────────────
+
       - name: Get EC2 instance ID
         id: ec2
         run: echo "instance_id=$(aws ec2 describe-instances --region ap-south-1 --filters 'Name=tag:Name,Values=recarbon-backend' 'Name=instance-state-name,Values=running' --query 'Reservations[0].Instances[0].InstanceId' --output text)" >> "$GITHUB_OUTPUT"
 
-      - name: Configure EC2
+
+      # ─────────────────────────────────────
+      # 7. Wait for SSM
+      # ─────────────────────────────────────
+
+      - name: Wait for SSM
         env:
           INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
-          set -e
-          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["sudo mkdir -p /opt/recarbon"]' --query 'Command.CommandId' --output text)
-          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
-          printf '%s\n' "NODE_ENV=${{ secrets.NODE_ENV }}" "PORT=${{ secrets.PORT }}" "MONGODB_URI=${{ secrets.MONGODB_URI }}" "JWT_SECRET=${{ secrets.JWT_SECRET }}" "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" "LLM_MODEL=${{ secrets.LLM_MODEL }}" "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}" > /tmp/recarbon.env
-          aws s3 cp /tmp/recarbon.env s3://recarbon-tfstate/recarbon/deploy.env --region ap-south-1
-          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters 'commands=["aws s3 cp s3://recarbon-terraform-state-482712210253/recarbon/deploy.env /opt/recarbon/.env --region ap-south-1","sudo chmod 600 /opt/recarbon/.env","sudo chown root:root /opt/recarbon/.env"]' --query 'Command.CommandId' --output text)
-          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
+          for i in {1..30}; do
+            STATUS=$(aws ssm describe-instance-information --region ap-south-1 --filters "Key=InstanceIds,Values=$INSTANCE_ID" --query 'InstanceInformationList[0].PingStatus' --output text)
+            if [ "$STATUS" = "Online" ]; then
+              echo "EC2 is online in SSM."
+              exit 0
+            fi
+            echo "Waiting for SSM..."
+            sleep 10
+          done
+          echo "EC2 did not become available in SSM."
+          exit 1
+      
 
       # ─────────────────────────────────────
-      # 6. Deploy via SSM
+      # 8. Deploy through SSM
       # ─────────────────────────────────────
 
       - name: Deploy to EC2
@@ -113,7 +109,36 @@ jobs:
           INSTANCE_ID: ${{ steps.ec2.outputs.instance_id }}
         run: |
           set -e
+          
+          ENV_CONTENT=$(printf '%s\n' \
+            "NODE_ENV=${{ secrets.NODE_ENV }}" \
+            "PORT=${{ secrets.PORT }}" \
+            "MONGODB_URI=${{ secrets.MONGODB_URI }}" \
+            "JWT_SECRET=${{ secrets.JWT_SECRET }}" \
+            "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" \
+            "PINECONE_INDEX_NAME=${{ secrets.PINECONE_INDEX_NAME }}" \
+            "OLLAMA_BASE_URL=${{ secrets.OLLAMA_BASE_URL }}" \
+            "OLLAMA_CLOUD_URL=${{ secrets.OLLAMA_CLOUD_URL }}" \
+            "LLM_MODEL=${{ secrets.LLM_MODEL }}" \
+            "FEED_FRESHNESS_DECAY_DAYS=${{ secrets.FEED_FRESHNESS_DECAY_DAYS }}")
+          
+          ENV_B64=$(printf '%s' "$ENV_CONTENT" | base64 -w0)
+          
           IMAGE="${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          COMMAND_ID=$(aws ssm send-command --region ap-south-1 --instance-ids "$INSTANCE_ID" --document-name "AWS-RunShellScript" --parameters "commands=[\"docker pull $IMAGE\",\"docker stop recarbon-backend || true\",\"docker rm recarbon-backend || true\",\"docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env -p 3000:3000 $IMAGE\",\"sleep 5\",\"docker ps --filter name=recarbon-backend --filter status=running\",\"docker image prune -af\"]" --query "Command.CommandId" --output text)
-          aws ssm wait command-executed --region ap-south-1 --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID"
+          
+          COMMAND_ID=$(aws ssm send-command \
+            --region ap-south-1 \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[\"mkdir -p /opt/recarbon\",\"echo '$ENV_B64' | base64 -d > /opt/recarbon/.env\",\"chmod 600 /opt/recarbon/.env\",\"chown root:root /opt/recarbon/.env\",\"docker pull $IMAGE\",\"docker stop recarbon-backend || true\",\"docker rm recarbon-backend || true\",\"docker run -d --name recarbon-backend --restart unless-stopped --env-file /opt/recarbon/.env -p 3000:3000 $IMAGE\",\"sleep 5\",\"docker ps --filter name=recarbon-backend --filter status=running\",\"docker image prune -af\"]" \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "SSM command: $COMMAND_ID"
+          
+          aws ssm wait command-executed \
+            --region ap-south-1 \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID"
+          
           echo "Deployment successful!"
